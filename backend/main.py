@@ -16,6 +16,21 @@ from app.core.database import Base, close_redis, engine, init_redis
 Base.metadata.create_all(bind=engine)
 
 
+def ensure_runtime_schema() -> None:
+    with engine.begin() as connection:
+        columns = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info('daily_tasks')").fetchall()
+        }
+        if "status" not in columns:
+            connection.exec_driver_sql("ALTER TABLE daily_tasks ADD COLUMN status VARCHAR(20) DEFAULT 'pending' NOT NULL")
+        if "completed_at" not in columns:
+            connection.exec_driver_sql("ALTER TABLE daily_tasks ADD COLUMN completed_at DATETIME")
+
+
+ensure_runtime_schema()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting application...")

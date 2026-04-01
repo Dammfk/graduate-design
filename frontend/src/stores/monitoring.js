@@ -91,6 +91,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     summary: {},
     daily_tasks: [],
     tasks: [],
+    today_tasks: [],
     inventory: [],
     assets: []
   })
@@ -171,6 +172,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
         summary: operationsDashboard.summary,
         daily_tasks: operationsDashboard.daily_tasks,
         tasks: operationsDashboard.tasks,
+        today_tasks: operationsDashboard.today_tasks,
         inventory: operationsDashboard.inventory,
         assets: operationsDashboard.assets
       },
@@ -467,6 +469,29 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     return updatedTask
   }
 
+  async function deleteTask(taskId) {
+    if (!Array.isArray(operationsDashboard.today_tasks)) {
+      operationsDashboard.today_tasks = []
+    }
+    const existingTask = operationsDashboard.tasks.find(task => task.id === taskId)
+    const existingTodayTask = operationsDashboard.today_tasks.find(task => task.id === taskId)
+    const response = await operationsAPI.deleteTask(taskId)
+    if (response.data.status !== 'success') throw new Error('删除今日任务失败')
+    operationsDashboard.tasks = operationsDashboard.tasks.filter(task => task.id !== taskId)
+    operationsDashboard.today_tasks = operationsDashboard.today_tasks.filter(task => task.id !== taskId)
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      task_count: Math.max((operationsDashboard.summary.task_count || 1) - (existingTodayTask ? 1 : 0), 0),
+      pending_tasks: Math.max(
+        (operationsDashboard.summary.pending_tasks || 0) - (existingTask && existingTask.status !== 'completed' ? 1 : 0),
+        0
+      )
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return response.data.data
+  }
+
   async function updateTaskStatus(taskId, status) {
     const previousTask = operationsDashboard.tasks.find(task => task.id === taskId)
     if (previousTask) {
@@ -532,10 +557,27 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     const response = await operationsAPI.createDailyTask(payload)
     if (response.data.status !== 'success') throw new Error('创建每日任务失败')
     const createdTask = response.data.data
+    if (!Array.isArray(operationsDashboard.today_tasks)) {
+      operationsDashboard.today_tasks = []
+    }
     operationsDashboard.daily_tasks = [createdTask, ...operationsDashboard.daily_tasks]
+    if (createdTask.is_active !== false) {
+      operationsDashboard.today_tasks = [
+        {
+          ...createdTask,
+          id: `daily-${createdTask.id}`,
+          source: 'daily',
+          source_id: createdTask.id,
+          is_template: true
+        },
+        ...operationsDashboard.today_tasks.filter(task => task.id !== `daily-${createdTask.id}`)
+      ]
+    }
     operationsDashboard.summary = {
       ...operationsDashboard.summary,
-      daily_task_count: (operationsDashboard.summary.daily_task_count || 0) + 1
+      daily_task_count: (operationsDashboard.summary.daily_task_count || 0) + 1,
+      task_count: (operationsDashboard.summary.task_count || 0) + (createdTask.is_active === false ? 0 : 1),
+      pending_tasks: (operationsDashboard.summary.pending_tasks || 0) + ((createdTask.is_active !== false && createdTask.status !== 'completed') ? 1 : 0)
     }
     persistCache()
     fetchOperationsDashboard().catch(() => {})
@@ -543,11 +585,20 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   }
 
   async function updateDailyTask(taskId, payload) {
+    if (!Array.isArray(operationsDashboard.today_tasks)) {
+      operationsDashboard.today_tasks = []
+    }
     const previousTask = operationsDashboard.daily_tasks.find(task => task.id === taskId)
     if (previousTask) {
       operationsDashboard.daily_tasks = operationsDashboard.daily_tasks.map(task =>
         task.id === taskId ? { ...task, ...payload } : task
       )
+      const todayTaskId = `daily-${taskId}`
+      if (operationsDashboard.today_tasks.some(task => task.id === todayTaskId)) {
+        operationsDashboard.today_tasks = operationsDashboard.today_tasks.map(task =>
+          task.id === todayTaskId ? { ...task, ...payload } : task
+        )
+      }
       persistCache()
     }
     let response
@@ -579,9 +630,133 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     operationsDashboard.daily_tasks = operationsDashboard.daily_tasks.map(task =>
       task.id === taskId ? { ...task, ...updatedTask } : task
     )
+    const todayTaskId = `daily-${taskId}`
+    if (updatedTask.is_active === false) {
+      operationsDashboard.today_tasks = operationsDashboard.today_tasks.filter(task => task.id !== todayTaskId)
+    } else if (operationsDashboard.today_tasks.some(task => task.id === todayTaskId)) {
+      operationsDashboard.today_tasks = operationsDashboard.today_tasks.map(task =>
+        task.id === todayTaskId
+          ? { ...task, ...updatedTask, id: todayTaskId, source: 'daily', source_id: taskId, is_template: true }
+          : task
+      )
+    } else {
+      operationsDashboard.today_tasks = [
+        { ...updatedTask, id: todayTaskId, source: 'daily', source_id: taskId, is_template: true },
+        ...operationsDashboard.today_tasks
+      ]
+    }
     persistCache()
     fetchOperationsDashboard().catch(() => {})
     return updatedTask
+  }
+
+  async function deleteDailyTask(taskId) {
+    if (!Array.isArray(operationsDashboard.today_tasks)) {
+      operationsDashboard.today_tasks = []
+    }
+    const existingTask = operationsDashboard.daily_tasks.find(task => task.id === taskId)
+    const response = await operationsAPI.deleteDailyTask(taskId)
+    if (response.data.status !== 'success') throw new Error('删除每日任务失败')
+    operationsDashboard.daily_tasks = operationsDashboard.daily_tasks.filter(task => task.id !== taskId)
+    operationsDashboard.today_tasks = operationsDashboard.today_tasks.filter(task => task.id !== `daily-${taskId}`)
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      daily_task_count: Math.max((operationsDashboard.summary.daily_task_count || 1) - 1, 0),
+      task_count: Math.max((operationsDashboard.summary.task_count || 0) - (existingTask?.is_active ? 1 : 0), 0),
+      pending_tasks: Math.max(
+        (operationsDashboard.summary.pending_tasks || 0) - (existingTask?.is_active && existingTask?.status !== 'completed' ? 1 : 0),
+        0
+      )
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return response.data.data
+  }
+
+  async function createInventoryItem(payload) {
+    const response = await operationsAPI.createInventoryItem(payload)
+    if (response.data.status !== 'success') throw new Error('新增库存物资失败')
+    const createdItem = response.data.data
+    operationsDashboard.inventory = [createdItem, ...operationsDashboard.inventory].sort((a, b) =>
+      `${a.category}-${a.item_name}`.localeCompare(`${b.category}-${b.item_name}`, 'zh-CN')
+    )
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      low_stock_items: operationsDashboard.inventory.filter(item => item.is_low_stock).length
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return createdItem
+  }
+
+  async function updateInventoryItem(itemId, payload) {
+    const response = await operationsAPI.updateInventoryItem(itemId, payload)
+    if (response.data.status !== 'success') throw new Error('更新库存物资失败')
+    const updatedItem = response.data.data
+    operationsDashboard.inventory = operationsDashboard.inventory
+      .map(item => (item.id === itemId ? { ...item, ...updatedItem } : item))
+      .sort((a, b) => `${a.category}-${a.item_name}`.localeCompare(`${b.category}-${b.item_name}`, 'zh-CN'))
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      low_stock_items: operationsDashboard.inventory.filter(item => item.is_low_stock).length
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return updatedItem
+  }
+
+  async function deleteInventoryItem(itemId) {
+    const response = await operationsAPI.deleteInventoryItem(itemId)
+    if (response.data.status !== 'success') throw new Error('删除库存物资失败')
+    operationsDashboard.inventory = operationsDashboard.inventory.filter(item => item.id !== itemId)
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      low_stock_items: operationsDashboard.inventory.filter(item => item.is_low_stock).length
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return response.data.data
+  }
+
+  async function createEquipmentAsset(payload) {
+    const response = await operationsAPI.createEquipmentAsset(payload)
+    if (response.data.status !== 'success') throw new Error('新增设备台账失败')
+    const createdAsset = response.data.data
+    operationsDashboard.assets = [createdAsset, ...operationsDashboard.assets].sort((a, b) =>
+      `${a.zone_name || ''}-${a.asset_name}`.localeCompare(`${b.zone_name || ''}-${b.asset_name}`, 'zh-CN')
+    )
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      asset_count: operationsDashboard.assets.length
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return createdAsset
+  }
+
+  async function updateEquipmentAsset(assetId, payload) {
+    const response = await operationsAPI.updateEquipmentAsset(assetId, payload)
+    if (response.data.status !== 'success') throw new Error('更新设备台账失败')
+    const updatedAsset = response.data.data
+    operationsDashboard.assets = operationsDashboard.assets
+      .map(asset => (asset.id === assetId ? { ...asset, ...updatedAsset } : asset))
+      .sort((a, b) => `${a.zone_name || ''}-${a.asset_name}`.localeCompare(`${b.zone_name || ''}-${b.asset_name}`, 'zh-CN'))
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return updatedAsset
+  }
+
+  async function deleteEquipmentAsset(assetId) {
+    const response = await operationsAPI.deleteEquipmentAsset(assetId)
+    if (response.data.status !== 'success') throw new Error('删除设备台账失败')
+    operationsDashboard.assets = operationsDashboard.assets.filter(asset => asset.id !== assetId)
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      asset_count: Math.max((operationsDashboard.summary.asset_count || 1) - 1, 0)
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return response.data.data
   }
 
   async function updateUser(userId, payload) {
@@ -905,8 +1080,16 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     createTask,
     updateTaskStatus,
     updateTask,
+    deleteTask,
     createDailyTask,
     updateDailyTask,
+    deleteDailyTask,
+    createInventoryItem,
+    updateInventoryItem,
+    deleteInventoryItem,
+    createEquipmentAsset,
+    updateEquipmentAsset,
+    deleteEquipmentAsset,
     updateUser,
     fetchUserLogs,
     createArchive,

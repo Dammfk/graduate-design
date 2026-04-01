@@ -283,6 +283,7 @@ class ProductionTaskUpdate(BaseModel):
 class DailyTaskCreate(BaseModel):
     title: str = Field(..., max_length=100)
     category: str = Field(..., max_length=50)
+    status: str = Field(default="pending", max_length=20)
     priority: str = Field(default="medium", max_length=20)
     zone_name: Optional[str] = None
     archive_id: Optional[int] = None
@@ -294,9 +295,60 @@ class DailyTaskCreate(BaseModel):
 class DailyTaskUpdate(BaseModel):
     title: Optional[str] = Field(default=None, max_length=100)
     category: Optional[str] = Field(default=None, max_length=50)
+    status: Optional[str] = Field(default=None, max_length=20)
     priority: Optional[str] = Field(default=None, max_length=20)
     zone_name: Optional[str] = None
     archive_id: Optional[int] = None
     assignee_user_id: Optional[int] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class InventoryItemCreate(BaseModel):
+    item_name: str = Field(..., max_length=100)
+    category: str = Field(..., max_length=50)
+    unit: str = Field(default="kg", max_length=20)
+    current_stock: float = 0
+    safety_stock: float = 0
+    location: Optional[str] = None
+    supplier: Optional[str] = None
+    last_restocked_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class InventoryItemUpdate(BaseModel):
+    item_name: Optional[str] = Field(default=None, max_length=100)
+    category: Optional[str] = Field(default=None, max_length=50)
+    unit: Optional[str] = Field(default=None, max_length=20)
+    current_stock: Optional[float] = None
+    safety_stock: Optional[float] = None
+    location: Optional[str] = None
+    supplier: Optional[str] = None
+    last_restocked_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class EquipmentAssetCreate(BaseModel):
+    asset_code: str = Field(..., max_length=50)
+    asset_name: str = Field(..., max_length=100)
+    asset_type: str = Field(..., max_length=50)
+    zone_name: Optional[str] = None
+    linked_device_id: Optional[int] = None
+    status: str = Field(default="online", max_length=20)
+    installed_at: Optional[datetime] = None
+    last_maintenance_at: Optional[datetime] = None
+    next_maintenance_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class EquipmentAssetUpdate(BaseModel):
+    asset_code: Optional[str] = Field(default=None, max_length=50)
+    asset_name: Optional[str] = Field(default=None, max_length=100)
+    asset_type: Optional[str] = Field(default=None, max_length=50)
+    zone_name: Optional[str] = None
+    linked_device_id: Optional[int] = None
+    status: Optional[str] = Field(default=None, max_length=20)
+    installed_at: Optional[datetime] = None
+    last_maintenance_at: Optional[datetime] = None
+    next_maintenance_at: Optional[datetime] = None
+    notes: Optional[str] = None

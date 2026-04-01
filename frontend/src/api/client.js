@@ -150,6 +150,12 @@ export const operationsAPI = {
     })
   },
 
+  deleteTask(taskId) {
+    return api.delete(`/operations/tasks/${taskId}`, {
+      timeout: 20000
+    })
+  },
+
   createDailyTask(data) {
     return api.post('/operations/daily-tasks', data, {
       timeout: 20000
@@ -158,6 +164,48 @@ export const operationsAPI = {
 
   updateDailyTask(taskId, data) {
     return api.put(`/operations/daily-tasks/${taskId}`, data, {
+      timeout: 20000
+    })
+  },
+
+  deleteDailyTask(taskId) {
+    return api.delete(`/operations/daily-tasks/${taskId}`, {
+      timeout: 20000
+    })
+  },
+
+  createInventoryItem(data) {
+    return api.post('/operations/inventory', data, {
+      timeout: 20000
+    })
+  },
+
+  updateInventoryItem(itemId, data) {
+    return api.put(`/operations/inventory/${itemId}`, data, {
+      timeout: 20000
+    })
+  },
+
+  deleteInventoryItem(itemId) {
+    return api.delete(`/operations/inventory/${itemId}`, {
+      timeout: 20000
+    })
+  },
+
+  createEquipmentAsset(data) {
+    return api.post('/operations/assets', data, {
+      timeout: 20000
+    })
+  },
+
+  updateEquipmentAsset(assetId, data) {
+    return api.put(`/operations/assets/${assetId}`, data, {
+      timeout: 20000
+    })
+  },
+
+  deleteEquipmentAsset(assetId) {
+    return api.delete(`/operations/assets/${assetId}`, {
       timeout: 20000
     })
   }

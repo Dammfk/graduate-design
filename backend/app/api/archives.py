@@ -1,3 +1,5 @@
+import traceback
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,7 @@ async def get_archive_dashboard(db: Session = Depends(get_db)):
     try:
         return {"status": "success", "data": ArchiveService.get_archive_dashboard(db)}
     except Exception as exc:
+        traceback.print_exc()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
