@@ -57,6 +57,17 @@ async function handleCommand(componentKey, commandType, reason) {
 <style scoped lang="scss">
 .control-layout {
   display: grid;
-  gap: 18px;
+  gap: 14px;
+}
+
+.control-layout > .page-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 14px;
+}
+
+@media (max-width: 1100px) {
+  .control-layout > .page-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

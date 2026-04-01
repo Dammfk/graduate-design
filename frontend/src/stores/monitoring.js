@@ -2,6 +2,8 @@ import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { alarmAPI, archiveAPI, controlAPI, operationsAPI, systemAPI, telemetryAPI } from '../api/client'
 
+const CACHE_KEY = 'smart-ranch-dashboard-cache'
+
 function createEmptyLatestData() {
   return {
     temperature: null,
@@ -14,6 +16,25 @@ function createEmptyLatestData() {
 
 function normalizeError(error, fallback) {
   return error?.response?.data?.detail || error?.message || fallback
+}
+
+function readCache() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCache(payload) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(payload))
+  } catch {
+    // Ignore cache write failures and keep runtime state working.
+  }
 }
 
 export const useMonitoringStore = defineStore('monitoring', () => {
@@ -116,6 +137,77 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     system: 0
   })
 
+  function persistCache() {
+    writeCache({
+      selectedZone: selectedZone.value,
+      selectedDeviceId: selectedDeviceId.value,
+      selectedHours: selectedHours.value,
+      selectedArchiveId: selectedArchiveId.value,
+      overview: {
+        summary: overview.summary,
+        zones: overview.zones,
+        devices: overview.devices
+      },
+      controlDashboard: {
+        devices: controlDashboard.devices,
+        automation_rules: controlDashboard.automation_rules,
+        recent_commands: controlDashboard.recent_commands,
+        components_catalog: controlDashboard.components_catalog
+      },
+      archiveDashboard: {
+        summary: archiveDashboard.summary,
+        archives: archiveDashboard.archives
+      },
+      riskDashboard: {
+        summary: riskDashboard.summary,
+        level_distribution: riskDashboard.level_distribution,
+        type_distribution: riskDashboard.type_distribution,
+        zone_distribution: riskDashboard.zone_distribution,
+        archive_risks: riskDashboard.archive_risks,
+        history: riskDashboard.history
+      },
+      operationsDashboard: {
+        summary: operationsDashboard.summary,
+        tasks: operationsDashboard.tasks,
+        inventory: operationsDashboard.inventory,
+        assets: operationsDashboard.assets
+      },
+      systemDashboard: {
+        summary: systemDashboard.summary,
+        users: systemDashboard.users,
+        role_permissions: systemDashboard.role_permissions,
+        operation_logs: systemDashboard.operation_logs
+      },
+      latestData: { ...latestData },
+      historicalData: historicalData.value,
+      alarms: alarms.value,
+      users: users.value
+    })
+  }
+
+  function hydrateFromCache() {
+    const cache = readCache()
+    if (!cache) return
+
+    selectedZone.value = cache.selectedZone || ''
+    selectedDeviceId.value = cache.selectedDeviceId || ''
+    selectedHours.value = cache.selectedHours || 24
+    selectedArchiveId.value = cache.selectedArchiveId ?? null
+
+    Object.assign(overview, cache.overview || {})
+    Object.assign(controlDashboard, cache.controlDashboard || {})
+    Object.assign(archiveDashboard, cache.archiveDashboard || {})
+    Object.assign(riskDashboard, cache.riskDashboard || {})
+    Object.assign(operationsDashboard, cache.operationsDashboard || {})
+    Object.assign(systemDashboard, cache.systemDashboard || {})
+    Object.assign(latestData, cache.latestData || createEmptyLatestData())
+    historicalData.value = cache.historicalData || []
+    alarms.value = cache.alarms || []
+    users.value = cache.users || []
+
+    syncDefaultSelection()
+  }
+
   const zoneOptions = computed(() => overview.zones)
   const currentZone = computed(() => overview.zones.find(item => item.zone_name === selectedZone.value) || null)
   const currentZoneDevices = computed(() => currentZone.value?.devices || [])
@@ -175,6 +267,8 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     lastRefreshError.value = message
   }
 
+  hydrateFromCache()
+
   async function fetchOverview() {
     const response = await telemetryAPI.getOverview()
     if (response.data.status === 'success') {
@@ -183,12 +277,16 @@ export const useMonitoringStore = defineStore('monitoring', () => {
       overview.devices = response.data.data.devices
       syncDefaultSelection()
       if (currentDevice.value?.latest_data) applyLatestData(currentDevice.value.latest_data)
+      persistCache()
     }
   }
 
   async function fetchControlDashboard() {
     const response = await controlAPI.getDashboard()
-    if (response.data.status === 'success') Object.assign(controlDashboard, response.data.data)
+    if (response.data.status === 'success') {
+      Object.assign(controlDashboard, response.data.data)
+      persistCache()
+    }
   }
 
   async function fetchArchiveDashboard() {
@@ -197,12 +295,16 @@ export const useMonitoringStore = defineStore('monitoring', () => {
       archiveDashboard.summary = response.data.data.summary
       archiveDashboard.archives = response.data.data.archives
       syncDefaultSelection()
+      persistCache()
     }
   }
 
   async function fetchRiskDashboard() {
     const response = await alarmAPI.getRiskDashboard()
-    if (response.data.status === 'success') Object.assign(riskDashboard, response.data.data)
+    if (response.data.status === 'success') {
+      Object.assign(riskDashboard, response.data.data)
+      persistCache()
+    }
   }
 
   async function fetchOperationsDashboard() {
@@ -210,6 +312,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     if (response.data.status === 'success') {
       Object.assign(operationsDashboard, response.data.data)
       users.value = response.data.data.users || users.value
+      persistCache()
     }
   }
 
@@ -218,13 +321,17 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     if (response.data.status === 'success') {
       Object.assign(systemDashboard, response.data.data)
       users.value = response.data.data.users || users.value
+      persistCache()
     }
   }
 
   async function fetchLatestData(deviceId = selectedDeviceId.value) {
     if (!deviceId) return
     const response = await telemetryAPI.getLatest(deviceId)
-    if (response.data.status === 'success') applyLatestData(response.data.data)
+    if (response.data.status === 'success') {
+      applyLatestData(response.data.data)
+      persistCache()
+    }
   }
 
   async function fetchHistoricalData(deviceId = selectedDeviceId.value, hours = selectedHours.value) {
@@ -238,12 +345,16 @@ export const useMonitoringStore = defineStore('monitoring', () => {
         co2_concentration: item.co2_concentration,
         ammonia_concentration: item.ammonia_concentration
       }))
+      persistCache()
     }
   }
 
   async function fetchAlarms() {
     const response = await alarmAPI.getPending()
-    if (response.data.status === 'success') alarms.value = response.data.data
+    if (response.data.status === 'success') {
+      alarms.value = response.data.data
+      persistCache()
+    }
   }
 
   async function acknowledgeAlarm(alarmId) {
@@ -293,9 +404,23 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   async function updateUser(userId, payload) {
     const response = await systemAPI.updateUser(userId, payload)
     if (response.data.status !== 'success') throw new Error('更新用户信息失败')
+    systemDashboard.users = systemDashboard.users.map(user =>
+      user.id === userId ? { ...user, ...response.data.data } : user
+    )
+    systemDashboard.summary = {
+      ...systemDashboard.summary,
+      user_count: systemDashboard.users.length,
+      active_users: systemDashboard.users.filter(user => user.is_active).length
+    }
     fetchSystemDashboard().catch(error => {
       lastRefreshError.value = normalizeError(error, '用户信息已更新，但系统面板刷新失败，请稍后手动刷新查看。')
     })
+    return response.data.data
+  }
+
+  async function fetchUserLogs(userId, limit = 20) {
+    const response = await systemAPI.getUserLogs(userId, limit)
+    if (response.data.status !== 'success') throw new Error('查询用户操作日志失败')
     return response.data.data
   }
 
@@ -548,6 +673,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     createTask,
     updateTaskStatus,
     updateUser,
+    fetchUserLogs,
     createArchive,
     updateArchive,
     deleteArchive,

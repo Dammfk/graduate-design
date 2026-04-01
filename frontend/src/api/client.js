@@ -146,7 +146,15 @@ export const systemAPI = {
     return api.get('/system/dashboard')
   },
 
+  getUserLogs(userId, limit = 20) {
+    return api.get(`/system/users/${userId}/logs`, {
+      params: { limit }
+    })
+  },
+
   updateUser(userId, data) {
-    return api.put(`/system/users/${userId}`, data)
+    return api.put(`/system/users/${userId}`, data, {
+      timeout: 20000
+    })
   }
 }

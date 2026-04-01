@@ -71,6 +71,25 @@ class SystemService:
         }
 
     @staticmethod
+    def get_user_operation_logs(db: Session, user_id: int, limit: int = 20) -> dict:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise ValueError(f"User not found: {user_id}")
+
+        logs = (
+            db.query(OperationLog)
+            .filter(OperationLog.user_id == user_id)
+            .order_by(OperationLog.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        user_lookup = {user.id: user}
+        return {
+            "user": SystemService._serialize_user(user),
+            "logs": [SystemService._serialize_log(log, user_lookup) for log in logs],
+        }
+
+    @staticmethod
     def update_user(
         db: Session,
         user_id: int,
@@ -81,18 +100,36 @@ class SystemService:
         if not user:
             raise ValueError(f"User not found: {user_id}")
 
+        changes: list[str] = []
+
         if role is not None:
             valid_roles = {item.value for item in RoleEnum}
             if role not in valid_roles:
                 raise ValueError(f"Invalid role: {role}")
+            previous_role = user.role.value if hasattr(user.role, "value") else str(user.role)
             user.role = RoleEnum(role)
+            if previous_role != role:
+                changes.append(f"role: {previous_role} -> {role}")
 
         if is_active is not None:
+            previous_active = user.is_active
             user.is_active = is_active
+            if previous_active != is_active:
+                changes.append(f"is_active: {previous_active} -> {is_active}")
 
         user.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(user)
+
+        if changes:
+            SystemService.create_operation_log(
+                db=db,
+                user_id=user.id,
+                module_name="system",
+                action="update_user",
+                target=user.username,
+                detail="; ".join(changes),
+            )
         return SystemService._serialize_user(user)
 
     @staticmethod

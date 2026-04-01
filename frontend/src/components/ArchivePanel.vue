@@ -2,7 +2,7 @@
   <section class="archive-panel">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">数字档案</p>
+        <p class="eyebrow">Digital Archive</p>
         <h2>养殖档案</h2>
       </div>
       <div class="header-actions">
@@ -16,10 +16,29 @@
     </div>
 
     <div class="summary-grid">
-      <div><span>批次档案</span><strong>{{ summary.archive_count }}</strong></div>
-      <div><span>活跃批次</span><strong>{{ summary.active_batches }}</strong></div>
-      <div><span>当前存栏</span><strong>{{ summary.total_quantity }}</strong></div>
+      <div><span>批次档案</span><strong>{{ summary.archive_count || 0 }}</strong></div>
+      <div><span>活跃批次</span><strong>{{ summary.active_batches || 0 }}</strong></div>
+      <div><span>当前存栏</span><strong>{{ summary.total_quantity || 0 }}</strong></div>
       <div><span>个体档案</span><strong>{{ summary.individual_archive_count || 0 }}</strong></div>
+    </div>
+
+    <div class="search-bar">
+      <div class="search-field">
+        <label>按批次查询</label>
+        <select v-model="archiveFilter">
+          <option value="">全部批次</option>
+          <option v-for="archive in archives" :key="archive.id" :value="archive.id">
+            {{ archive.batch_number }}
+          </option>
+        </select>
+      </div>
+      <div class="search-field">
+        <label>按编号查询</label>
+        <input v-model.trim="animalKeyword" placeholder="输入个体编号或耳标号" />
+      </div>
+      <div class="search-result">
+        当前结果 {{ filteredAnimals.length }} 条
+      </div>
     </div>
 
     <div class="archive-layout">
@@ -72,33 +91,37 @@
 
         <div class="records-box">
           <div class="detail-header">
-            <h3>新增牛羊个体档案</h3>
-            <button class="primary-btn" type="button" @click="showAnimalModal = true">新增个体档案</button>
-          </div>
-        </div>
-
-        <div class="records-box">
-          <div class="detail-header">
             <h3>个体牛羊档案</h3>
-            <span class="helper-text">先从左侧列表选中一个个体，再进行修改或删除。</span>
+            <div class="inline-actions">
+              <span class="helper-text">支持按批次和编号查询，列表分页展示</span>
+              <button class="primary-btn" type="button" @click="showAnimalModal = true">新增个体档案</button>
+            </div>
           </div>
 
-          <div v-if="selectedArchive.animals?.length" class="animal-layout">
-            <div class="animal-selector-list">
-              <button
-                v-for="animal in selectedArchive.animals"
-                :key="animal.id"
-                class="animal-selector-card"
-                :class="{ active: animal.id === selectedAnimalId }"
-                @click="selectedAnimalId = animal.id"
-              >
-                <div class="animal-top">
-                  <strong>{{ animal.animal_code }}</strong>
-                  <span class="health-tag" :class="animal.health_status">{{ formatHealth(animal.health_status) }}</span>
-                </div>
-                <p>{{ animal.species }} / {{ animal.breed || '未录入品种' }}</p>
-                <small>耳标：{{ animal.ear_tag || '--' }}</small>
-              </button>
+          <div v-if="filteredAnimals.length" class="animal-layout">
+            <div class="animal-selector-panel">
+              <div class="animal-selector-list">
+                <button
+                  v-for="animal in pagedAnimals"
+                  :key="animal.id"
+                  class="animal-selector-card"
+                  :class="{ active: animal.id === selectedAnimalId }"
+                  @click="selectedAnimalId = animal.id"
+                >
+                  <div class="animal-top">
+                    <strong>{{ animal.animal_code }}</strong>
+                    <span class="health-tag" :class="animal.health_status">{{ formatHealth(animal.health_status) }}</span>
+                  </div>
+                  <p>{{ animal.species }} / {{ animal.breed || '未录入品种' }}</p>
+                  <small>耳标：{{ animal.ear_tag || '--' }}</small>
+                </button>
+              </div>
+
+              <div class="pagination-bar">
+                <button class="ghost-btn" type="button" :disabled="animalPage === 1" @click="animalPage -= 1">上一页</button>
+                <span>第 {{ animalPage }} / {{ totalAnimalPages }} 页</span>
+                <button class="ghost-btn" type="button" :disabled="animalPage >= totalAnimalPages" @click="animalPage += 1">下一页</button>
+              </div>
             </div>
 
             <div v-if="selectedAnimal" class="animal-editor">
@@ -151,7 +174,7 @@
             </div>
           </div>
 
-          <p v-else>当前批次暂无个体牛羊档案。</p>
+          <p v-else>当前筛选条件下没有找到个体档案。</p>
         </div>
       </div>
     </div>
@@ -185,8 +208,8 @@
         <div class="form-grid">
           <input v-model="newAnimal.animal_code" placeholder="个体编号，如 CATTLE-010" />
           <input v-model="newAnimal.species" placeholder="物种，如 肉牛/肉羊" />
-          <input v-model="newAnimal.breed" placeholder="品种，如 西门塔尔" />
-          <input v-model="newAnimal.gender" placeholder="性别，如 公/母" />
+          <input v-model="newAnimal.breed" placeholder="品种" />
+          <input v-model="newAnimal.gender" placeholder="性别" />
           <input v-model="newAnimal.ear_tag" placeholder="耳标号" />
           <input v-model.number="newAnimal.weight" type="number" min="0" step="0.1" placeholder="体重(kg)" />
           <input v-model="newAnimal.check_in_date" type="datetime-local" />
@@ -232,10 +255,6 @@ const archiveForm = reactive({
   expected_checkout_date: '',
   notes: ''
 })
-const selectedAnimalId = ref(null)
-const historyExpanded = ref(false)
-const showArchiveModal = ref(false)
-const showAnimalModal = ref(false)
 const selectedAnimalForm = reactive({
   animal_code: '',
   species: '',
@@ -249,14 +268,44 @@ const selectedAnimalForm = reactive({
   immunization_note: '',
   notes: ''
 })
+
+const selectedAnimalId = ref(null)
+const historyExpanded = ref(false)
+const showArchiveModal = ref(false)
+const showAnimalModal = ref(false)
+const archiveFilter = ref('')
+const animalKeyword = ref('')
+const animalPage = ref(1)
+const pageSize = 6
 const submitting = reactive({ archive: false, archiveEdit: false, archiveDelete: false, animal: false })
 const busyAnimalId = ref(null)
 const feedback = reactive({ type: '', message: '' })
 
 const healthMap = { stable: '稳定', good: '良好', observe: '观察' }
 
+const filteredAnimals = computed(() => {
+  const normalizedKeyword = animalKeyword.value.trim().toLowerCase()
+  const targetArchiveId = archiveFilter.value ? Number(archiveFilter.value) : props.selectedArchiveId
+  const targetArchive = props.archives.find(item => item.id === targetArchiveId) || props.selectedArchive
+  const animals = targetArchive?.animals || []
+
+  if (!normalizedKeyword) return animals
+  return animals.filter(animal => {
+    const code = (animal.animal_code || '').toLowerCase()
+    const earTag = (animal.ear_tag || '').toLowerCase()
+    return code.includes(normalizedKeyword) || earTag.includes(normalizedKeyword)
+  })
+})
+
+const totalAnimalPages = computed(() => Math.max(1, Math.ceil(filteredAnimals.value.length / pageSize)))
+
+const pagedAnimals = computed(() => {
+  const start = (animalPage.value - 1) * pageSize
+  return filteredAnimals.value.slice(start, start + pageSize)
+})
+
 const selectedAnimal = computed(() => {
-  return props.selectedArchive?.animals?.find(animal => animal.id === selectedAnimalId.value) || null
+  return filteredAnimals.value.find(animal => animal.id === selectedAnimalId.value) || pagedAnimals.value[0] || null
 })
 
 watch(
@@ -264,6 +313,7 @@ watch(
   (archive) => {
     if (!archive) return
 
+    archiveFilter.value = String(archive.id)
     archiveForm.batch_number = archive.batch_number || ''
     archiveForm.species = archive.species || ''
     archiveForm.quantity = archive.quantity || 1
@@ -272,6 +322,7 @@ watch(
     archiveForm.feed_consumption = archive.feed_consumption
     archiveForm.expected_checkout_date = toDatetimeLocal(archive.expected_checkout_date)
     archiveForm.notes = archive.notes || ''
+    animalPage.value = 1
 
     const animals = archive.animals || []
     if (!animals.some(animal => animal.id === selectedAnimalId.value)) {
@@ -281,6 +332,16 @@ watch(
   },
   { immediate: true }
 )
+
+watch([filteredAnimals, animalPage], () => {
+  if (animalPage.value > totalAnimalPages.value) {
+    animalPage.value = totalAnimalPages.value
+  }
+
+  if (!filteredAnimals.value.some(animal => animal.id === selectedAnimalId.value)) {
+    selectedAnimalId.value = pagedAnimals.value[0]?.id ?? filteredAnimals.value[0]?.id ?? null
+  }
+})
 
 watch(
   selectedAnimal,
@@ -439,6 +500,7 @@ async function submitAnimal() {
     newAnimal.check_in_date = ''
     newAnimal.source = ''
     showAnimalModal.value = false
+    animalPage.value = 1
     setFeedback('success', '个体档案新增成功。')
   } catch (error) {
     setFeedback('error', normalizeError(error, '个体档案新增失败。'))
@@ -503,10 +565,14 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .summary-grid div,.records-box,.archive-card,.animal-selector-card,.history-item{padding:14px;border-radius:16px;background:rgba(10,33,39,.88)}
 .summary-grid span{display:block;color:#87a5ac;font-size:12px;margin-bottom:6px}
 .summary-grid strong{font-size:20px}
-.form-grid input,.form-grid select,.animal-form-grid input,.animal-form-grid select{height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);background:rgba(12,43,49,.94);color:#eff7f8}
-.archive-layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
+.search-bar{display:grid;grid-template-columns:220px minmax(0,1fr) 140px;gap:12px;align-items:end}
+.search-field{display:grid;gap:8px}
+.search-field label{font-size:13px;color:#87a5ac}
+.search-result{height:40px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:rgba(10,33,39,.88);color:#d6f2cf}
+.form-grid input,.form-grid select,.animal-form-grid input,.animal-form-grid select,.search-field input,.search-field select{height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);background:rgba(12,43,49,.94);color:#eff7f8}
+.archive-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px;align-items:start}
 .archive-list,.archive-detail,.animal-selector-list,.history-list{display:grid;gap:12px}
-.archive-list{width:300px;min-width:300px;max-width:300px}
+.archive-list{width:280px;min-width:280px;max-width:280px}
 .archive-card,.animal-selector-card{text-align:left;border:1px solid rgba(164,215,210,.12);cursor:pointer;color:#eff7f8}
 .archive-card.active,.animal-selector-card.active{border-color:rgba(125,207,116,.35);background:rgba(16,52,58,.94)}
 .archive-card.inactive{opacity:.6}
@@ -514,9 +580,22 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .health-tag{padding:4px 8px;border-radius:999px;font-size:12px}
 .health-tag.good,.health-tag.stable{background:rgba(125,207,116,.12);color:#d6f2cf}
 .health-tag.observe{background:rgba(255,200,87,.12);color:#ffe2a4}
-.animal-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px}
-.animal-editor{display:grid;gap:12px;padding:14px;border-radius:16px;background:rgba(8,27,32,.72)}
+.animal-layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px;align-items:start}
+.animal-selector-panel{display:grid;gap:12px;min-width:0}
+.animal-selector-list{grid-auto-rows:112px;max-height:472px;overflow:auto;padding-right:4px}
+.animal-selector-card{height:112px;display:grid;grid-template-rows:auto 1fr auto;align-content:stretch;gap:8px}
+.animal-selector-card strong,.archive-card strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.animal-selector-card p,.animal-selector-card small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.animal-editor{display:grid;gap:12px;padding:14px;border-radius:16px;background:rgba(8,27,32,.72);min-width:0}
+.animal-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(8,27,32,.72);color:#98b0b5;position:sticky;bottom:0}
 .history-box{margin-top:4px;padding:12px;border-radius:14px;background:rgba(8,27,32,.72)}
+.archive-detail{display:grid;gap:14px}
+.records-box{overflow:hidden}
+.records-box .detail-header{align-items:center}
+.archive-list{max-height:calc(100vh - 320px);overflow:auto;padding-right:4px}
+.history-list{max-height:220px;overflow:auto;padding-right:4px}
+.inline-actions{flex-wrap:wrap}
 .modal-mask{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(2,10,13,.66);backdrop-filter:blur(8px);z-index:30}
 .modal-card{width:min(760px,100%);display:grid;gap:16px;padding:22px;border-radius:24px;background:rgba(9,27,32,.98);border:1px solid rgba(176,224,221,.14);box-shadow:0 24px 60px rgba(0,0,0,.35)}
 .primary-btn,.ghost-btn,.danger-btn{height:40px;padding:0 16px;border-radius:12px;cursor:pointer}
@@ -525,8 +604,12 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .danger-btn{border:none;background:linear-gradient(135deg,#b45454,#8d2e2e);color:#fff}
 .primary-btn:disabled,.ghost-btn:disabled,.danger-btn:disabled{opacity:.6;cursor:not-allowed}
 @media (max-width:1200px){
-  .summary-grid,.form-grid,.animal-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .summary-grid,.form-grid,.animal-form-grid,.search-bar{grid-template-columns:repeat(2,minmax(0,1fr))}
   .archive-layout,.animal-layout{grid-template-columns:1fr}
   .archive-list{width:auto;min-width:0;max-width:none}
+  .animal-selector-list,.archive-list{max-height:none}
+}
+@media (max-width:720px){
+  .summary-grid,.form-grid,.animal-form-grid,.search-bar{grid-template-columns:1fr}
 }
 </style>

@@ -15,6 +15,16 @@ async def get_system_dashboard(db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
+@router.get("/users/{user_id}/logs")
+async def get_user_operation_logs(user_id: int, limit: int = 20, db: Session = Depends(get_db)):
+    try:
+        return {"status": "success", "data": SystemService.get_user_operation_logs(db, user_id, limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
 @router.put("/users/{user_id}")
 async def update_user(user_id: int, payload: dict, db: Session = Depends(get_db)):
     try:
