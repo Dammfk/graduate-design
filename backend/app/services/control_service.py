@@ -90,7 +90,7 @@ class ControlService:
                 threshold_value=70,
                 action_command="ON",
                 priority=3,
-                description="示意规则：夜间巡检时可自动补光，后续可接真实时段策略。",
+                description="示意规则：后续可替换为真实的时间段补光策略。",
                 is_enabled=False,
             ),
         ]
@@ -124,51 +124,78 @@ class ControlService:
         }
 
     @staticmethod
-    def _get_component_status(device_type: str, latest: EnvironmentData | None) -> list[dict]:
+    def _infer_component_status(device: Device, latest: EnvironmentData | None) -> dict[str, dict]:
         latest = latest or EnvironmentData()
         temp = latest.temperature
         ammonia = latest.ammonia_concentration
         co2 = latest.co2_concentration
 
-        fan_status = "ON" if ((temp is not None and temp > 30) or (ammonia is not None and ammonia > 20) or (co2 is not None and co2 > 1800)) else "OFF"
-        cooling_status = "ON" if temp is not None and temp > 32 else "OFF"
-        light_status = "ON" if device_type == "controller" else "OFF"
+        return {
+            "fan": {
+                "component_name": "排风风机",
+                "status": "ON" if ((temp is not None and temp > 30) or (ammonia is not None and ammonia > 20) or (co2 is not None and co2 > 1800)) else "OFF",
+                "mode": "auto",
+            },
+            "cooling_pad": {
+                "component_name": "水帘降温",
+                "status": "ON" if temp is not None and temp > 32 else "OFF",
+                "mode": "auto",
+            },
+            "fill_light": {
+                "component_name": "补光灯",
+                "status": "ON" if device.device_type == "controller" else "OFF",
+                "mode": "manual",
+            },
+        }
 
-        return [
-          {
-              "component_key": "fan",
-              "component_name": "排风风机",
-              "status": fan_status,
-              "mode": "auto",
-              "can_control": True,
-          },
-          {
-              "component_key": "cooling_pad",
-              "component_name": "水帘降温",
-              "status": cooling_status,
-              "mode": "auto",
-              "can_control": True,
-          },
-          {
-              "component_key": "fill_light",
-              "component_name": "补光灯",
-              "status": light_status,
-              "mode": "manual",
-              "can_control": True,
-          },
-        ]
+    @staticmethod
+    def _get_component_status(db: Session, device: Device, latest: EnvironmentData | None) -> list[dict]:
+        inferred = ControlService._infer_component_status(device, latest)
+
+        latest_logs = (
+            db.query(ControlCommandLog)
+            .filter(ControlCommandLog.device_id == device.id)
+            .order_by(ControlCommandLog.executed_at.desc(), ControlCommandLog.id.desc())
+            .all()
+        )
+        latest_log_by_component: dict[str, ControlCommandLog] = {}
+        for log in latest_logs:
+            if log.target_component not in latest_log_by_component:
+                latest_log_by_component[log.target_component] = log
+
+        components = []
+        for component_key in ["fan", "cooling_pad", "fill_light"]:
+            component_log = latest_log_by_component.get(component_key)
+            if component_log:
+                components.append(
+                    {
+                        "component_key": component_key,
+                        "component_name": inferred[component_key]["component_name"],
+                        "status": component_log.command_type.upper(),
+                        "mode": component_log.execution_mode,
+                        "can_control": True,
+                    }
+                )
+                continue
+
+            components.append(
+                {
+                    "component_key": component_key,
+                    "component_name": inferred[component_key]["component_name"],
+                    "status": inferred[component_key]["status"],
+                    "mode": inferred[component_key]["mode"],
+                    "can_control": True,
+                }
+            )
+
+        return components
 
     @staticmethod
     def get_control_dashboard(db: Session) -> dict:
         ControlService.ensure_default_rules(db)
         devices = db.query(Device).order_by(Device.location, Device.device_name).all()
         rules = db.query(AutomationRule).order_by(AutomationRule.priority.desc(), AutomationRule.id).all()
-        recent_logs = (
-            db.query(ControlCommandLog)
-            .order_by(ControlCommandLog.executed_at.desc())
-            .limit(20)
-            .all()
-        )
+        recent_logs = db.query(ControlCommandLog).order_by(ControlCommandLog.executed_at.desc()).limit(20).all()
 
         device_panels = []
         for device in devices:
@@ -178,15 +205,17 @@ class ControlService:
                 .order_by(EnvironmentData.recorded_at.desc())
                 .first()
             )
-            device_panels.append({
-                "device_id": device.device_id,
-                "device_name": device.device_name,
-                "location": device.location,
-                "device_type": device.device_type,
-                "zone_name": device.location.split()[0] if device.location else "未分区",
-                "latest_environment": ControlService._build_environment_snapshot(latest) if latest else None,
-                "components": ControlService._get_component_status(device.device_type, latest),
-            })
+            device_panels.append(
+                {
+                    "device_id": device.device_id,
+                    "device_name": device.device_name,
+                    "location": device.location,
+                    "device_type": device.device_type,
+                    "zone_name": device.location.split()[0] if device.location else "未分区",
+                    "latest_environment": ControlService._build_environment_snapshot(latest) if latest else None,
+                    "components": ControlService._get_component_status(db, device, latest),
+                }
+            )
 
         return {
             "components_catalog": ControlService.MANAGED_COMPONENTS,
@@ -244,11 +273,14 @@ class ControlService:
             status="success",
             reason=reason or "Manual control from web dashboard",
             operator_user_id=operator_user_id,
-            payload=json.dumps({
-                "device_id": device_id,
-                "target_component": target_component,
-                "command_type": command_type.upper(),
-            }, ensure_ascii=False),
+            payload=json.dumps(
+                {
+                    "device_id": device_id,
+                    "target_component": target_component,
+                    "command_type": command_type.upper(),
+                },
+                ensure_ascii=False,
+            ),
             executed_at=datetime.utcnow(),
             created_at=datetime.utcnow(),
         )

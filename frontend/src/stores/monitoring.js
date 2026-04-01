@@ -380,6 +380,18 @@ export const useMonitoringStore = defineStore('monitoring', () => {
 
   async function executeControlCommand(targetComponent, commandType, reason) {
     if (!selectedDeviceId.value) return
+    controlDashboard.devices = controlDashboard.devices.map(device => {
+      if (device.device_id !== selectedDeviceId.value) return device
+      return {
+        ...device,
+        components: (device.components || []).map(component =>
+          component.component_key === targetComponent
+            ? { ...component, status: commandType, mode: 'manual' }
+            : component
+        )
+      }
+    })
+    persistCache()
     await controlAPI.executeCommand(selectedDeviceId.value, {
       target_component: targetComponent,
       command_type: commandType,
