@@ -1,0 +1,152 @@
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api/v1',
+  timeout: 10000
+})
+
+export const telemetryAPI = {
+  sendTelemetry(data) {
+    return api.post('/telemetry/', data)
+  },
+
+  getOverview() {
+    return api.get('/telemetry/overview')
+  },
+
+  getLatest(deviceId) {
+    return api.get(`/telemetry/latest/${deviceId}`)
+  },
+
+  getHistory(deviceId, hours = 24) {
+    return api.get(`/telemetry/history/${deviceId}`, {
+      params: { hours }
+    })
+  },
+
+  getZoneHistory(zoneName, hours = 24) {
+    return api.get(`/telemetry/zones/${zoneName}/history`, {
+      params: { hours }
+    })
+  }
+}
+
+export const alarmAPI = {
+  getPending() {
+    return api.get('/alarms/pending')
+  },
+
+  getRiskDashboard() {
+    return api.get('/alarms/risk-dashboard')
+  },
+
+  getDeviceAlarms(deviceId, limit = 20) {
+    return api.get(`/alarms/device/${deviceId}`, {
+      params: { limit }
+    })
+  },
+
+  acknowledge(alarmId, userId = null) {
+    return api.put(`/alarms/${alarmId}/acknowledge`, {
+      user_id: userId
+    })
+  },
+
+  resolve(alarmId) {
+    return api.put(`/alarms/${alarmId}/resolve`)
+  }
+}
+
+export const deviceAPI = {
+  list(ownerId = null) {
+    return api.get('/devices/', {
+      params: { owner_id: ownerId }
+    })
+  },
+
+  getDetail(deviceId) {
+    return api.get(`/devices/${deviceId}`)
+  },
+
+  create(data, ownerId) {
+    return api.post('/devices/', data, {
+      params: { owner_id: ownerId }
+    })
+  },
+
+  update(deviceId, data) {
+    return api.put(`/devices/${deviceId}`, data)
+  },
+
+  delete(deviceId) {
+    return api.delete(`/devices/${deviceId}`)
+  }
+}
+
+export const controlAPI = {
+  getDashboard() {
+    return api.get('/control/dashboard')
+  },
+
+  executeCommand(deviceId, data) {
+    return api.post(`/control/devices/${deviceId}/commands`, data)
+  },
+
+  updateRule(ruleId, data) {
+    return api.put(`/control/rules/${ruleId}`, data)
+  }
+}
+
+export const archiveAPI = {
+  getDashboard() {
+    return api.get('/archives/dashboard')
+  },
+
+  createArchive(data) {
+    return api.post('/archives/', data)
+  },
+
+  updateArchive(archiveId, data) {
+    return api.put(`/archives/${archiveId}`, data)
+  },
+
+  deleteArchive(archiveId) {
+    return api.delete(`/archives/${archiveId}`)
+  },
+
+  createAnimal(data) {
+    return api.post('/archives/animals', data)
+  },
+
+  updateAnimal(animalId, data) {
+    return api.put(`/archives/animals/${animalId}`, data)
+  },
+
+  deleteAnimal(animalId) {
+    return api.delete(`/archives/animals/${animalId}`)
+  }
+}
+
+export const operationsAPI = {
+  getDashboard() {
+    return api.get('/operations/dashboard')
+  },
+
+  createTask(data) {
+    return api.post('/operations/tasks', data)
+  },
+
+  updateTaskStatus(taskId, data) {
+    return api.put(`/operations/tasks/${taskId}/status`, data)
+  }
+}
+
+export const systemAPI = {
+  getDashboard() {
+    return api.get('/system/dashboard')
+  },
+
+  updateUser(userId, data) {
+    return api.put(`/system/users/${userId}`, data)
+  }
+}
