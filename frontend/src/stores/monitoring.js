@@ -267,6 +267,13 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     lastRefreshError.value = message
   }
 
+  function clearModuleError(moduleKey) {
+    errorByModule[moduleKey] = ''
+    if (activeModuleKey.value === moduleKey) {
+      lastRefreshError.value = ''
+    }
+  }
+
   hydrateFromCache()
 
   async function fetchOverview() {
@@ -402,15 +409,62 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   }
 
   async function updateUser(userId, payload) {
-    const response = await systemAPI.updateUser(userId, payload)
+    let response
+    try {
+      response = await systemAPI.updateUser(userId, payload)
+    } catch (error) {
+      if (String(error?.message || '').includes('timeout')) {
+        try {
+          await fetchSystemDashboard()
+          const refreshedUser = systemDashboard.users.find(user => user.id === userId)
+          const matchedRole = payload.role === undefined || refreshedUser?.role === payload.role
+          const matchedActive = payload.is_active === undefined || refreshedUser?.is_active === payload.is_active
+          if (refreshedUser && matchedRole && matchedActive) {
+            return refreshedUser
+          }
+        } catch {
+          // Keep the original timeout error if the follow-up verification also fails.
+        }
+      }
+      throw error
+    }
     if (response.data.status !== 'success') throw new Error('更新用户信息失败')
+    const previousUser = systemDashboard.users.find(user => user.id === userId)
+    const updatedUser = response.data.data
     systemDashboard.users = systemDashboard.users.map(user =>
-      user.id === userId ? { ...user, ...response.data.data } : user
+      user.id === userId ? { ...user, ...updatedUser } : user
     )
     systemDashboard.summary = {
       ...systemDashboard.summary,
       user_count: systemDashboard.users.length,
       active_users: systemDashboard.users.filter(user => user.is_active).length
+    }
+    const changes = []
+    if (previousUser?.role !== updatedUser.role) {
+      changes.push(`role: ${previousUser?.role ?? '--'} -> ${updatedUser.role}`)
+    }
+    if (previousUser?.is_active !== updatedUser.is_active) {
+      changes.push(`is_active: ${previousUser?.is_active ?? '--'} -> ${updatedUser.is_active}`)
+    }
+    if (changes.length) {
+      systemDashboard.operation_logs = [
+        {
+          id: `local-${Date.now()}-${userId}`,
+          user_id: updatedUser.id,
+          username: updatedUser.username,
+          module_name: 'system',
+          action: 'update_user',
+          target: updatedUser.username,
+          detail: changes.join('; '),
+          created_at: new Date().toISOString()
+        },
+        ...systemDashboard.operation_logs
+      ].slice(0, 12)
+      systemDashboard.summary = {
+        ...systemDashboard.summary,
+        log_count: Math.max(systemDashboard.summary.log_count || 0, systemDashboard.operation_logs.length)
+      }
+      persistCache()
     }
     fetchSystemDashboard().catch(error => {
       lastRefreshError.value = normalizeError(error, '用户信息已更新，但系统面板刷新失败，请稍后手动刷新查看。')
@@ -609,10 +663,12 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     const task = (async () => {
       try {
         if (!options.silent) loading.value = true
-        errorByModule[moduleKey] = ''
+        if (!options.silent) {
+          clearModuleError(moduleKey)
+        }
         await loader()
       } catch (error) {
-        if (moduleRequestVersion[moduleKey] === requestVersion) {
+        if (moduleRequestVersion[moduleKey] === requestVersion && !options.silent) {
           setModuleError(moduleKey, error, '数据加载失败，当前页面已保留上一次成功内容。')
         }
       } finally {

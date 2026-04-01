@@ -88,7 +88,12 @@ const routes = [
 const routeMap = Object.fromEntries(routes.map(route => [route.path, route]))
 const currentRoute = computed(() => routeMap[currentPath.value] || routeMap['/'])
 const navigationItems = routes
-const activeError = computed(() => monitoringStore.errorByModule[currentRoute.value.key] || '')
+const activeError = computed(() => {
+  const message = monitoringStore.errorByModule[currentRoute.value.key] || ''
+  if (!message) return ''
+  if (message.includes('timeout of 10000ms exceeded')) return ''
+  return message
+})
 
 function navigate(path) {
   if (path === currentPath.value) return
