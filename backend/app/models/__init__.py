@@ -198,6 +198,22 @@ class ProductionTask(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class DailyTask(Base):
+    __tablename__ = "daily_tasks"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(100), nullable=False)
+    category = Column(String(50), nullable=False)
+    priority = Column(String(20), default="medium", nullable=False)
+    zone_name = Column(String(100))
+    archive_id = Column(Integer, ForeignKey("livestock_archive.id"))
+    assignee_user_id = Column(Integer, ForeignKey("users.id"))
+    description = Column(Text)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class InventoryItem(Base):
     __tablename__ = "inventory_items"
 

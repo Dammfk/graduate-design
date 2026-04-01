@@ -133,11 +133,33 @@ export const operationsAPI = {
   },
 
   createTask(data) {
-    return api.post('/operations/tasks', data)
+    return api.post('/operations/tasks', data, {
+      timeout: 20000
+    })
   },
 
   updateTaskStatus(taskId, data) {
-    return api.put(`/operations/tasks/${taskId}/status`, data)
+    return api.put(`/operations/tasks/${taskId}/status`, data, {
+      timeout: 20000
+    })
+  },
+
+  updateTask(taskId, data) {
+    return api.put(`/operations/tasks/${taskId}`, data, {
+      timeout: 20000
+    })
+  },
+
+  createDailyTask(data) {
+    return api.post('/operations/daily-tasks', data, {
+      timeout: 20000
+    })
+  },
+
+  updateDailyTask(taskId, data) {
+    return api.put(`/operations/daily-tasks/${taskId}`, data, {
+      timeout: 20000
+    })
   }
 }
 

@@ -6,15 +6,16 @@ from app.core.database import Base, SessionLocal, engine
 from app.models import (
     AlarmInfo,
     AnimalProfile,
+    DailyTask,
     Device,
     EnvironmentData,
     EquipmentAsset,
     InventoryItem,
     LivestockArchive,
+    OperationLog,
     ProductionTask,
     RoleEnum,
     User,
-    OperationLog,
 )
 
 
@@ -22,7 +23,6 @@ def get_or_create_user(session, username: str, **kwargs) -> User:
     user = session.query(User).filter(User.username == username).first()
     if user:
         return user
-
     user = User(username=username, **kwargs)
     session.add(user)
     session.flush()
@@ -33,7 +33,6 @@ def get_or_create_device(session, device_code: str, **kwargs) -> Device:
     device = session.query(Device).filter(Device.device_id == device_code).first()
     if device:
         return device
-
     device = Device(device_id=device_code, **kwargs)
     session.add(device)
     session.flush()
@@ -79,7 +78,7 @@ def seed_users(session) -> list[User]:
 def seed_devices(session, users: list[User]) -> list[Device]:
     now = datetime.utcnow()
     owner_map = {user.username: user for user in users}
-    devices = [
+    return [
         get_or_create_device(
             session,
             "DEVICE_001",
@@ -114,17 +113,14 @@ def seed_devices(session, users: list[User]) -> list[Device]:
             updated_at=now - timedelta(hours=4),
         ),
     ]
-    return devices
 
 
 def seed_environment_data(session, devices: list[Device]) -> int:
-    existing_count = session.query(EnvironmentData).count()
-    if existing_count > 0:
+    if session.query(EnvironmentData).count() > 0:
         return 0
 
     now = datetime.utcnow()
     rows_added = 0
-
     device_profiles = {
         "DEVICE_001": (25.5, 63.0, 820.0, 8.0),
         "DEVICE_002": (27.2, 68.0, 1180.0, 16.0),
@@ -134,38 +130,28 @@ def seed_environment_data(session, devices: list[Device]) -> int:
     for device in devices:
         base_temp, base_humidity, base_co2, base_ammonia = device_profiles[device.device_id]
         latest_time = None
-
         for hours_ago in range(23, -1, -1):
             recorded_at = now - timedelta(hours=hours_ago)
             offset = 23 - hours_ago
-            temperature = round(base_temp + ((offset % 6) - 2) * 0.4, 1)
-            humidity = round(base_humidity + ((offset % 5) - 2) * 1.3, 1)
-            co2 = round(base_co2 + ((offset % 7) - 3) * 45, 1)
-            ammonia = round(base_ammonia + ((offset % 4) - 1) * 1.8, 1)
-
             session.add(
                 EnvironmentData(
                     device_id=device.id,
-                    temperature=temperature,
-                    humidity=humidity,
-                    co2_concentration=co2,
-                    ammonia_concentration=ammonia,
+                    temperature=round(base_temp + ((offset % 6) - 2) * 0.4, 1),
+                    humidity=round(base_humidity + ((offset % 5) - 2) * 1.3, 1),
+                    co2_concentration=round(base_co2 + ((offset % 7) - 3) * 45, 1),
+                    ammonia_concentration=round(base_ammonia + ((offset % 4) - 1) * 1.8, 1),
                     recorded_at=recorded_at,
                     created_at=recorded_at,
                 )
             )
             latest_time = recorded_at
             rows_added += 1
-
         device.latest_data_timestamp = latest_time
-
     return rows_added
 
 
 def seed_livestock_archives(session) -> int:
-    existing_batches = {
-        row[0] for row in session.query(LivestockArchive.batch_number).all()
-    }
+    existing_batches = {row[0] for row in session.query(LivestockArchive.batch_number).all()}
     now = datetime.utcnow()
     records = [
         LivestockArchive(
@@ -175,7 +161,7 @@ def seed_livestock_archives(session) -> int:
             check_in_date=now - timedelta(days=18),
             expected_checkout_date=now + timedelta(days=22),
             immunization_records='{"vaccines":["新城疫","传支"],"last_date":"2026-03-20"}',
-            notes="生长状态稳定，采食正常",
+            notes="生长状态稳定，采食正常。",
             average_weight=1.85,
             feed_consumption=2.6,
             health_status="stable",
@@ -190,7 +176,7 @@ def seed_livestock_archives(session) -> int:
             check_in_date=now - timedelta(days=35),
             expected_checkout_date=now + timedelta(days=55),
             immunization_records='{"vaccines":["猪瘟","口蹄疫"],"last_date":"2026-03-12"}',
-            notes="需持续关注夜间温差",
+            notes="需要持续关注夜间温差。",
             average_weight=18.4,
             feed_consumption=31.2,
             health_status="observe",
@@ -205,7 +191,7 @@ def seed_livestock_archives(session) -> int:
             check_in_date=now - timedelta(days=42),
             expected_checkout_date=now + timedelta(days=90),
             immunization_records='{"vaccines":["牛肺疫"],"last_date":"2026-03-05"}',
-            notes="个别栏位已加装保温设施",
+            notes="个别栏位已加装保温设施。",
             average_weight=72.8,
             feed_consumption=118.0,
             health_status="good",
@@ -245,7 +231,7 @@ def seed_animal_profiles(session) -> int:
             ear_tag="EAR-C-001",
             source="北牧育种场",
             immunization_note="2026-03-05 已完成牛肺疫免疫",
-            notes="采食稳定，精神状态良好",
+            notes="采食稳定，精神状态良好。",
             is_active=True,
         ),
         AnimalProfile(
@@ -261,7 +247,7 @@ def seed_animal_profiles(session) -> int:
             ear_tag="EAR-C-002",
             source="北牧育种场",
             immunization_note="2026-03-05 已完成牛肺疫免疫",
-            notes="轻微应激反应，需持续观察",
+            notes="轻微应激反应，需要持续观察。",
             is_active=True,
         ),
         AnimalProfile(
@@ -277,7 +263,7 @@ def seed_animal_profiles(session) -> int:
             ear_tag="EAR-S-001",
             source="西北示范牧场",
             immunization_note="2026-03-10 已完成三联四防",
-            notes="活动正常",
+            notes="活动正常。",
             is_active=True,
         ),
         AnimalProfile(
@@ -293,7 +279,7 @@ def seed_animal_profiles(session) -> int:
             ear_tag="EAR-S-002",
             source="西北示范牧场",
             immunization_note="2026-03-10 已完成三联四防",
-            notes="增重表现良好",
+            notes="增重表现良好。",
             is_active=True,
         ),
     ]
@@ -314,7 +300,6 @@ def seed_alarms(session, devices: list[Device], users: list[User]) -> int:
     device_map = {device.device_id: device for device in devices}
     user_map = {user.username: user for user in users}
     now = datetime.utcnow()
-
     alarms = [
         AlarmInfo(
             device_id=device_map["DEVICE_002"].id,
@@ -360,7 +345,8 @@ def seed_alarms(session, devices: list[Device], users: list[User]) -> int:
     return len(alarms)
 
 
-def seed_operations(session, users: list[User]) -> tuple[int, int, int]:
+def seed_operations(session, users: list[User]) -> tuple[int, int, int, int]:
+    daily_task_count = 0
     task_count = 0
     inventory_count = 0
     asset_count = 0
@@ -370,9 +356,66 @@ def seed_operations(session, users: list[User]) -> tuple[int, int, int]:
     archive_map = {archive.batch_number: archive for archive in session.query(LivestockArchive).all()}
     device_map = {device.device_id: device for device in session.query(Device).all()}
 
+    existing_daily_task_titles = {row[0] for row in session.query(DailyTask.title).all()}
     existing_task_titles = {row[0] for row in session.query(ProductionTask.title).all()}
     existing_inventory_names = {row[0] for row in session.query(InventoryItem.item_name).all()}
     existing_asset_codes = {row[0] for row in session.query(EquipmentAsset.asset_code).all()}
+
+    daily_tasks = [
+        DailyTask(
+            title="清晨巡栏检查",
+            category="feeding",
+            priority="high",
+            zone_name="A区",
+            archive_id=archive_map.get("BATCH-PIG-002").id if archive_map.get("BATCH-PIG-002") else None,
+            assignee_user_id=user_map["operator_li"].id,
+            description="每日早班检查饮水、采食和栏舍通风情况。",
+            is_active=True,
+            created_at=now - timedelta(days=12),
+            updated_at=now - timedelta(hours=6),
+        ),
+        DailyTask(
+            title="鸡舍温湿度复核",
+            category="sanitation",
+            priority="medium",
+            zone_name="A区",
+            archive_id=archive_map.get("BATCH-CHICK-001").id if archive_map.get("BATCH-CHICK-001") else None,
+            assignee_user_id=user_map["manager_zhang"].id,
+            description="午间复核鸡舍温湿度和补光运行情况。",
+            is_active=True,
+            created_at=now - timedelta(days=10),
+            updated_at=now - timedelta(hours=8),
+        ),
+        DailyTask(
+            title="牛羊健康观察记录",
+            category="immunization",
+            priority="medium",
+            zone_name="B区",
+            archive_id=archive_map.get("BATCH-CALF-003").id if archive_map.get("BATCH-CALF-003") else None,
+            assignee_user_id=user_map["manager_zhang"].id,
+            description="记录牛羊精神状态、反刍和体表状况。",
+            is_active=True,
+            created_at=now - timedelta(days=9),
+            updated_at=now - timedelta(hours=10),
+        ),
+        DailyTask(
+            title="主控柜指示灯检查",
+            category="maintenance",
+            priority="low",
+            zone_name="B区",
+            assignee_user_id=user_map["admin"].id,
+            description="核对控制柜、风机联动和告警指示灯状态。",
+            is_active=True,
+            created_at=now - timedelta(days=15),
+            updated_at=now - timedelta(days=1),
+        ),
+    ]
+
+    for task in daily_tasks:
+        if task.title in existing_daily_task_titles:
+            continue
+        session.add(task)
+        daily_task_count += 1
 
     tasks = [
         ProductionTask(
@@ -407,6 +450,38 @@ def seed_operations(session, users: list[User]) -> tuple[int, int, int]:
             due_at=now - timedelta(days=1),
             completed_at=now - timedelta(hours=3),
             description="检查主控制柜接线、风机联动和告警蜂鸣器。",
+        ),
+        ProductionTask(
+            title="傍晚牛舍补饲复核",
+            category="feeding",
+            status="pending",
+            priority="medium",
+            zone_name="B区",
+            archive_id=archive_map.get("BATCH-CALF-003").id if archive_map.get("BATCH-CALF-003") else None,
+            assignee_user_id=user_map["operator_li"].id,
+            due_at=now + timedelta(hours=9),
+            description="核对傍晚补饲量和饮水槽清洁情况。",
+        ),
+        ProductionTask(
+            title="疫苗冷柜温度登记",
+            category="maintenance",
+            status="pending",
+            priority="high",
+            zone_name="仓库",
+            assignee_user_id=user_map["manager_zhang"].id,
+            due_at=now + timedelta(hours=4),
+            description="登记疫苗冷藏柜温度并确认冷链状态。",
+        ),
+        ProductionTask(
+            title="羊舍夜间通风检查",
+            category="sanitation",
+            status="pending",
+            priority="medium",
+            zone_name="B区",
+            archive_id=archive_map.get("BATCH-CALF-003").id if archive_map.get("BATCH-CALF-003") else None,
+            assignee_user_id=user_map["operator_li"].id,
+            due_at=now + timedelta(hours=12),
+            description="根据夜间温差复核羊舍风机和卷帘状态。",
         ),
     ]
 
@@ -449,6 +524,28 @@ def seed_operations(session, users: list[User]) -> tuple[int, int, int]:
             supplier="牧康生物",
             last_restocked_at=now - timedelta(days=5),
             notes="本周免疫任务可覆盖。",
+        ),
+        InventoryItem(
+            item_name="羔羊奶粉",
+            category="feed",
+            unit="袋",
+            current_stock=6,
+            safety_stock=10,
+            location="饲料仓 B",
+            supplier="牧安营养",
+            last_restocked_at=now - timedelta(days=3),
+            notes="用于断奶前羔羊补饲。",
+        ),
+        InventoryItem(
+            item_name="耳标备用包",
+            category="supplies",
+            unit="包",
+            current_stock=14,
+            safety_stock=6,
+            location="工具柜 2",
+            supplier="牧场耗材中心",
+            last_restocked_at=now - timedelta(days=9),
+            notes="用于个体建档和补标。",
         ),
     ]
 
@@ -495,6 +592,29 @@ def seed_operations(session, users: list[User]) -> tuple[int, int, int]:
             next_maintenance_at=now + timedelta(days=20),
             notes="夜间按策略启停。",
         ),
+        EquipmentAsset(
+            asset_code="ASSET-PUMP-004",
+            asset_name="水帘循环泵",
+            asset_type="pump",
+            zone_name="A区",
+            linked_device_id=device_map.get("DEVICE_003").id if device_map.get("DEVICE_003") else None,
+            status="online",
+            installed_at=now - timedelta(days=150),
+            last_maintenance_at=now - timedelta(days=18),
+            next_maintenance_at=now + timedelta(days=15),
+            notes="高温时段联动水帘使用。",
+        ),
+        EquipmentAsset(
+            asset_code="ASSET-CABINET-005",
+            asset_name="仓库防疫药品柜",
+            asset_type="cabinet",
+            zone_name="仓库",
+            status="online",
+            installed_at=now - timedelta(days=300),
+            last_maintenance_at=now - timedelta(days=40),
+            next_maintenance_at=now + timedelta(days=5),
+            notes="用于药品与冷藏包统一管理。",
+        ),
     ]
 
     for asset in assets:
@@ -503,12 +623,11 @@ def seed_operations(session, users: list[User]) -> tuple[int, int, int]:
         session.add(asset)
         asset_count += 1
 
-    return task_count, inventory_count, asset_count
+    return daily_task_count, task_count, inventory_count, asset_count
 
 
 def seed_operation_logs(session, users: list[User]) -> int:
-    existing = session.query(OperationLog).count()
-    if existing > 0:
+    if session.query(OperationLog).count() > 0:
         return 0
 
     user_map = {user.username: user for user in users}
@@ -525,7 +644,7 @@ def seed_operation_logs(session, users: list[User]) -> int:
         OperationLog(
             user_id=user_map["manager_zhang"].id,
             module_name="archives",
-            action="新增牛羊个体档案",
+            action="新增个体档案",
             target="animal:CATTLE-002",
             detail="录入耳标和健康状态。",
             created_at=now - timedelta(hours=3),
@@ -555,7 +674,7 @@ def main() -> None:
         archive_rows = seed_livestock_archives(session)
         animal_rows = seed_animal_profiles(session)
         alarm_rows = seed_alarms(session, devices, users)
-        task_rows, inventory_rows, asset_rows = seed_operations(session, users)
+        daily_task_rows, task_rows, inventory_rows, asset_rows = seed_operations(session, users)
         log_rows = seed_operation_logs(session, users)
         session.commit()
 
@@ -566,6 +685,7 @@ def main() -> None:
         print(f"livestock_archive added: {archive_rows}")
         print(f"animal_profiles added: {animal_rows}")
         print(f"alarm_info added: {alarm_rows}")
+        print(f"daily_tasks added: {daily_task_rows}")
         print(f"production_tasks added: {task_rows}")
         print(f"inventory_items added: {inventory_rows}")
         print(f"equipment_assets added: {asset_rows}")

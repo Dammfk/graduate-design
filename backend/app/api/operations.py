@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas import ProductionTaskCreate, ProductionTaskStatusUpdate
+from app.schemas import DailyTaskCreate, DailyTaskUpdate, ProductionTaskCreate, ProductionTaskStatusUpdate, ProductionTaskUpdate
 from app.services import OperationsService
 
 router = APIRouter(prefix="/api/v1/operations", tags=["operations"])
@@ -38,11 +38,44 @@ async def create_task(payload: ProductionTaskCreate, db: Session = Depends(get_d
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
+@router.put("/tasks/{task_id}")
+async def update_task(task_id: int, payload: ProductionTaskUpdate, db: Session = Depends(get_db)):
+    try:
+        result = OperationsService.update_task(db=db, task_id=task_id, **payload.model_dump(exclude_unset=True))
+        return {"status": "success", "message": "Task updated", "data": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
 @router.put("/tasks/{task_id}/status")
 async def update_task_status(task_id: int, payload: ProductionTaskStatusUpdate, db: Session = Depends(get_db)):
     try:
         result = OperationsService.update_task_status(db=db, task_id=task_id, status=payload.status)
         return {"status": "success", "message": "Task updated", "data": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post("/daily-tasks")
+async def create_daily_task(payload: DailyTaskCreate, db: Session = Depends(get_db)):
+    try:
+        result = OperationsService.create_daily_task(db=db, **payload.model_dump())
+        return {"status": "success", "message": "Daily task created", "data": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.put("/daily-tasks/{task_id}")
+async def update_daily_task(task_id: int, payload: DailyTaskUpdate, db: Session = Depends(get_db)):
+    try:
+        result = OperationsService.update_daily_task(db=db, task_id=task_id, **payload.model_dump(exclude_unset=True))
+        return {"status": "success", "message": "Daily task updated", "data": result}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except Exception as exc:

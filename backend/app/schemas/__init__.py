@@ -266,3 +266,37 @@ class ProductionTaskCreate(BaseModel):
 
 class ProductionTaskStatusUpdate(BaseModel):
     status: str = Field(..., max_length=20)
+
+
+class ProductionTaskUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=100)
+    category: Optional[str] = Field(default=None, max_length=50)
+    priority: Optional[str] = Field(default=None, max_length=20)
+    status: Optional[str] = Field(default=None, max_length=20)
+    zone_name: Optional[str] = None
+    archive_id: Optional[int] = None
+    assignee_user_id: Optional[int] = None
+    due_at: Optional[datetime] = None
+    description: Optional[str] = None
+
+
+class DailyTaskCreate(BaseModel):
+    title: str = Field(..., max_length=100)
+    category: str = Field(..., max_length=50)
+    priority: str = Field(default="medium", max_length=20)
+    zone_name: Optional[str] = None
+    archive_id: Optional[int] = None
+    assignee_user_id: Optional[int] = None
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class DailyTaskUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=100)
+    category: Optional[str] = Field(default=None, max_length=50)
+    priority: Optional[str] = Field(default=None, max_length=20)
+    zone_name: Optional[str] = None
+    archive_id: Optional[int] = None
+    assignee_user_id: Optional[int] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None

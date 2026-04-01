@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models import EquipmentAsset, InventoryItem, LivestockArchive, ProductionTask, User
+from app.models import DailyTask, EquipmentAsset, InventoryItem, LivestockArchive, ProductionTask, User
 
 
 class OperationsService:
@@ -27,6 +27,27 @@ class OperationsService:
             "completed_at": task.completed_at.isoformat() if task.completed_at else None,
             "description": task.description,
             "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        }
+
+    @staticmethod
+    def _serialize_daily_task(task: DailyTask, archive_lookup: dict[int, LivestockArchive], user_lookup: dict[int, User]) -> dict:
+        archive = archive_lookup.get(task.archive_id)
+        assignee = user_lookup.get(task.assignee_user_id)
+        return {
+            "id": task.id,
+            "title": task.title,
+            "category": task.category,
+            "priority": task.priority,
+            "zone_name": task.zone_name,
+            "archive_id": task.archive_id,
+            "archive_batch_number": archive.batch_number if archive else None,
+            "assignee_user_id": task.assignee_user_id,
+            "assignee_name": assignee.username if assignee else None,
+            "description": task.description,
+            "is_active": task.is_active,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
         }
 
     @staticmethod
@@ -63,19 +84,25 @@ class OperationsService:
         }
 
     @staticmethod
-    def get_dashboard(db: Session) -> dict:
-        tasks = db.query(ProductionTask).order_by(ProductionTask.due_at.asc(), ProductionTask.created_at.desc()).all()
-        inventory_items = db.query(InventoryItem).order_by(InventoryItem.category.asc(), InventoryItem.item_name.asc()).all()
-        assets = db.query(EquipmentAsset).order_by(EquipmentAsset.zone_name.asc(), EquipmentAsset.asset_name.asc()).all()
-
-        archive_ids = {task.archive_id for task in tasks if task.archive_id}
-        user_ids = {task.assignee_user_id for task in tasks if task.assignee_user_id}
+    def _build_lookup(db: Session, archive_ids: set[int], user_ids: set[int]) -> tuple[dict[int, LivestockArchive], dict[int, User]]:
         archive_lookup = {
             item.id: item for item in db.query(LivestockArchive).filter(LivestockArchive.id.in_(archive_ids)).all()
         } if archive_ids else {}
         user_lookup = {
             item.id: item for item in db.query(User).filter(User.id.in_(user_ids)).all()
         } if user_ids else {}
+        return archive_lookup, user_lookup
+
+    @staticmethod
+    def get_dashboard(db: Session) -> dict:
+        tasks = db.query(ProductionTask).order_by(ProductionTask.due_at.asc(), ProductionTask.created_at.desc()).all()
+        daily_tasks = db.query(DailyTask).order_by(DailyTask.is_active.desc(), DailyTask.updated_at.desc()).all()
+        inventory_items = db.query(InventoryItem).order_by(InventoryItem.category.asc(), InventoryItem.item_name.asc()).all()
+        assets = db.query(EquipmentAsset).order_by(EquipmentAsset.zone_name.asc(), EquipmentAsset.asset_name.asc()).all()
+
+        archive_ids = {task.archive_id for task in tasks if task.archive_id} | {task.archive_id for task in daily_tasks if task.archive_id}
+        user_ids = {task.assignee_user_id for task in tasks if task.assignee_user_id} | {task.assignee_user_id for task in daily_tasks if task.assignee_user_id}
+        archive_lookup, user_lookup = OperationsService._build_lookup(db, archive_ids, user_ids)
 
         pending_tasks = [task for task in tasks if task.status != "completed"]
         low_stock_items = [item for item in inventory_items if item.current_stock <= item.safety_stock]
@@ -86,12 +113,14 @@ class OperationsService:
         return {
             "summary": {
                 "task_count": len(tasks),
+                "daily_task_count": len(daily_tasks),
                 "pending_tasks": len(pending_tasks),
                 "low_stock_items": len(low_stock_items),
                 "asset_count": len(assets),
                 "maintenance_due_assets": len(maintenance_due_assets),
             },
             "tasks": [OperationsService._serialize_task(task, archive_lookup, user_lookup) for task in tasks],
+            "daily_tasks": [OperationsService._serialize_daily_task(task, archive_lookup, user_lookup) for task in daily_tasks],
             "inventory": [OperationsService._serialize_inventory(item) for item in inventory_items],
             "assets": [OperationsService._serialize_asset(asset) for asset in assets],
             "users": [
@@ -103,6 +132,13 @@ class OperationsService:
                 for user in db.query(User).filter(User.is_active == True).order_by(User.id.asc()).all()
             ],
         }
+
+    @staticmethod
+    def _validate_relations(db: Session, archive_id: int | None, assignee_user_id: int | None) -> None:
+        if archive_id and not db.query(LivestockArchive).filter(LivestockArchive.id == archive_id).first():
+            raise ValueError(f"Archive not found: {archive_id}")
+        if assignee_user_id and not db.query(User).filter(User.id == assignee_user_id).first():
+            raise ValueError(f"User not found: {assignee_user_id}")
 
     @staticmethod
     def create_task(
@@ -117,11 +153,7 @@ class OperationsService:
         due_at: datetime | None = None,
         description: str | None = None,
     ) -> dict:
-        if archive_id and not db.query(LivestockArchive).filter(LivestockArchive.id == archive_id).first():
-            raise ValueError(f"Archive not found: {archive_id}")
-        if assignee_user_id and not db.query(User).filter(User.id == assignee_user_id).first():
-            raise ValueError(f"User not found: {assignee_user_id}")
-
+        OperationsService._validate_relations(db, archive_id, assignee_user_id)
         task = ProductionTask(
             title=title,
             category=category,
@@ -139,17 +171,81 @@ class OperationsService:
         db.add(task)
         db.commit()
         db.refresh(task)
-        return OperationsService._serialize_task(task, {}, {})
+        archive_lookup, user_lookup = OperationsService._build_lookup(db, {task.archive_id} if task.archive_id else set(), {task.assignee_user_id} if task.assignee_user_id else set())
+        return OperationsService._serialize_task(task, archive_lookup, user_lookup)
 
     @staticmethod
-    def update_task_status(db: Session, task_id: int, status: str) -> dict:
+    def update_task(db: Session, task_id: int, **payload) -> dict:
         task = db.query(ProductionTask).filter(ProductionTask.id == task_id).first()
         if not task:
             raise ValueError(f"Task not found: {task_id}")
 
-        task.status = status
-        task.completed_at = datetime.utcnow() if status == "completed" else None
+        archive_id = payload.get("archive_id", task.archive_id)
+        assignee_user_id = payload.get("assignee_user_id", task.assignee_user_id)
+        OperationsService._validate_relations(db, archive_id, assignee_user_id)
+
+        for field, value in payload.items():
+            if value is not None or field in {"archive_id", "assignee_user_id", "zone_name", "description"}:
+                setattr(task, field, value)
+
+        task.completed_at = datetime.utcnow() if task.status == "completed" else None
         task.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(task)
-        return OperationsService._serialize_task(task, {}, {})
+        archive_lookup, user_lookup = OperationsService._build_lookup(db, {task.archive_id} if task.archive_id else set(), {task.assignee_user_id} if task.assignee_user_id else set())
+        return OperationsService._serialize_task(task, archive_lookup, user_lookup)
+
+    @staticmethod
+    def update_task_status(db: Session, task_id: int, status: str) -> dict:
+        return OperationsService.update_task(db=db, task_id=task_id, status=status)
+
+    @staticmethod
+    def create_daily_task(
+        db: Session,
+        title: str,
+        category: str,
+        priority: str = "medium",
+        zone_name: str | None = None,
+        archive_id: int | None = None,
+        assignee_user_id: int | None = None,
+        description: str | None = None,
+        is_active: bool = True,
+    ) -> dict:
+        OperationsService._validate_relations(db, archive_id, assignee_user_id)
+        task = DailyTask(
+            title=title,
+            category=category,
+            priority=priority,
+            zone_name=zone_name,
+            archive_id=archive_id,
+            assignee_user_id=assignee_user_id,
+            description=description,
+            is_active=is_active,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        archive_lookup, user_lookup = OperationsService._build_lookup(db, {task.archive_id} if task.archive_id else set(), {task.assignee_user_id} if task.assignee_user_id else set())
+        return OperationsService._serialize_daily_task(task, archive_lookup, user_lookup)
+
+    @staticmethod
+    def update_daily_task(db: Session, task_id: int, **payload) -> dict:
+        task = db.query(DailyTask).filter(DailyTask.id == task_id).first()
+        if not task:
+            raise ValueError(f"Daily task not found: {task_id}")
+
+        archive_id = payload.get("archive_id", task.archive_id)
+        assignee_user_id = payload.get("assignee_user_id", task.assignee_user_id)
+        OperationsService._validate_relations(db, archive_id, assignee_user_id)
+
+        for field, value in payload.items():
+          if value is not None or field in {"archive_id", "assignee_user_id", "zone_name", "description", "is_active"}:
+              setattr(task, field, value)
+
+        task.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(task)
+        archive_lookup, user_lookup = OperationsService._build_lookup(db, {task.archive_id} if task.archive_id else set(), {task.assignee_user_id} if task.assignee_user_id else set())
+        return OperationsService._serialize_daily_task(task, archive_lookup, user_lookup)

@@ -89,6 +89,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
 
   const operationsDashboard = reactive({
     summary: {},
+    daily_tasks: [],
     tasks: [],
     inventory: [],
     assets: []
@@ -168,6 +169,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
       },
       operationsDashboard: {
         summary: operationsDashboard.summary,
+        daily_tasks: operationsDashboard.daily_tasks,
         tasks: operationsDashboard.tasks,
         inventory: operationsDashboard.inventory,
         assets: operationsDashboard.assets
@@ -391,21 +393,195 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   }
 
   async function createTask(payload) {
-    const response = await operationsAPI.createTask(payload)
+    let response
+    try {
+      response = await operationsAPI.createTask(payload)
+    } catch (error) {
+      if (String(error?.message || '').includes('timeout')) {
+        try {
+          await fetchOperationsDashboard()
+          const matchedTask = operationsDashboard.tasks.find(task =>
+            task.title === payload.title &&
+            task.category === payload.category &&
+            task.due_at === payload.due_at
+          )
+          if (matchedTask) {
+            return matchedTask
+          }
+        } catch {
+          // Keep original timeout error if verification refresh also fails.
+        }
+      }
+      throw error
+    }
     if (response.data.status !== 'success') throw new Error('创建生产任务失败')
+    const createdTask = response.data.data
+    operationsDashboard.tasks = [createdTask, ...operationsDashboard.tasks]
+      .sort((a, b) => {
+        const timeA = a?.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER
+        const timeB = b?.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER
+        return timeA - timeB
+      })
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      task_count: (operationsDashboard.summary.task_count || 0) + 1,
+      pending_tasks: (operationsDashboard.summary.pending_tasks || 0) + (createdTask.status === 'completed' ? 0 : 1)
+    }
+    persistCache()
     fetchOperationsDashboard().catch(error => {
       lastRefreshError.value = normalizeError(error, '任务创建成功，但任务面板刷新失败，请稍后手动刷新查看。')
     })
-    return response.data.data
+    return createdTask
+  }
+
+  async function updateTask(taskId, payload) {
+    let response
+    try {
+      response = await operationsAPI.updateTask(taskId, payload)
+    } catch (error) {
+      if (String(error?.message || '').includes('timeout')) {
+        try {
+          await fetchOperationsDashboard()
+          const refreshedTask = operationsDashboard.tasks.find(task => task.id === taskId)
+          const matchedStatus = payload.status === undefined || refreshedTask?.status === payload.status
+          if (refreshedTask && matchedStatus) {
+            return refreshedTask
+          }
+        } catch {
+          // keep original timeout below
+        }
+      }
+      throw error
+    }
+    if (response.data.status !== 'success') throw new Error('更新今日任务失败')
+    const updatedTask = response.data.data
+    operationsDashboard.tasks = operationsDashboard.tasks.map(task =>
+      task.id === taskId ? { ...task, ...updatedTask } : task
+    )
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      pending_tasks: operationsDashboard.tasks.filter(task => task.status !== 'completed').length
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return updatedTask
   }
 
   async function updateTaskStatus(taskId, status) {
-    const response = await operationsAPI.updateTaskStatus(taskId, { status })
+    const previousTask = operationsDashboard.tasks.find(task => task.id === taskId)
+    if (previousTask) {
+      operationsDashboard.tasks = operationsDashboard.tasks.map(task =>
+        task.id === taskId
+          ? {
+              ...task,
+              status,
+              completed_at: status === 'completed' ? new Date().toISOString() : null
+            }
+          : task
+      )
+      operationsDashboard.summary = {
+        ...operationsDashboard.summary,
+        pending_tasks: operationsDashboard.tasks.filter(task => task.status !== 'completed').length
+      }
+      persistCache()
+    }
+    let response
+    try {
+      response = await operationsAPI.updateTaskStatus(taskId, { status })
+    } catch (error) {
+      if (String(error?.message || '').includes('timeout')) {
+        try {
+          await fetchOperationsDashboard()
+          const refreshedTask = operationsDashboard.tasks.find(task => task.id === taskId)
+          if (refreshedTask?.status === status) {
+            return refreshedTask
+          }
+        } catch {
+          // Keep original timeout error if verification refresh also fails.
+        }
+      }
+      if (previousTask) {
+        operationsDashboard.tasks = operationsDashboard.tasks.map(task =>
+          task.id === taskId ? previousTask : task
+        )
+        operationsDashboard.summary = {
+          ...operationsDashboard.summary,
+          pending_tasks: operationsDashboard.tasks.filter(task => task.status !== 'completed').length
+        }
+        persistCache()
+      }
+      throw error
+    }
     if (response.data.status !== 'success') throw new Error('更新任务状态失败')
+    const updatedTask = response.data.data
+    operationsDashboard.tasks = operationsDashboard.tasks.map(task =>
+      task.id === taskId ? { ...task, ...updatedTask } : task
+    )
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      pending_tasks: operationsDashboard.tasks.filter(task => task.status !== 'completed').length
+    }
+    persistCache()
     fetchOperationsDashboard().catch(error => {
       lastRefreshError.value = normalizeError(error, '任务状态已更新，但任务面板刷新失败，请稍后手动刷新查看。')
     })
-    return response.data.data
+    return updatedTask || previousTask
+  }
+
+  async function createDailyTask(payload) {
+    const response = await operationsAPI.createDailyTask(payload)
+    if (response.data.status !== 'success') throw new Error('创建每日任务失败')
+    const createdTask = response.data.data
+    operationsDashboard.daily_tasks = [createdTask, ...operationsDashboard.daily_tasks]
+    operationsDashboard.summary = {
+      ...operationsDashboard.summary,
+      daily_task_count: (operationsDashboard.summary.daily_task_count || 0) + 1
+    }
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return createdTask
+  }
+
+  async function updateDailyTask(taskId, payload) {
+    const previousTask = operationsDashboard.daily_tasks.find(task => task.id === taskId)
+    if (previousTask) {
+      operationsDashboard.daily_tasks = operationsDashboard.daily_tasks.map(task =>
+        task.id === taskId ? { ...task, ...payload } : task
+      )
+      persistCache()
+    }
+    let response
+    try {
+      response = await operationsAPI.updateDailyTask(taskId, payload)
+    } catch (error) {
+      if (String(error?.message || '').includes('timeout')) {
+        try {
+          await fetchOperationsDashboard()
+          const refreshedTask = operationsDashboard.daily_tasks.find(task => task.id === taskId)
+          const matchedActive = payload.is_active === undefined || refreshedTask?.is_active === payload.is_active
+          if (refreshedTask && matchedActive) {
+            return refreshedTask
+          }
+        } catch {
+          // keep original timeout below
+        }
+      }
+      if (previousTask) {
+        operationsDashboard.daily_tasks = operationsDashboard.daily_tasks.map(task =>
+          task.id === taskId ? previousTask : task
+        )
+        persistCache()
+      }
+      throw error
+    }
+    if (response.data.status !== 'success') throw new Error('更新每日任务失败')
+    const updatedTask = response.data.data
+    operationsDashboard.daily_tasks = operationsDashboard.daily_tasks.map(task =>
+      task.id === taskId ? { ...task, ...updatedTask } : task
+    )
+    persistCache()
+    fetchOperationsDashboard().catch(() => {})
+    return updatedTask
   }
 
   async function updateUser(userId, payload) {
@@ -728,6 +904,9 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     toggleAutomationRule,
     createTask,
     updateTaskStatus,
+    updateTask,
+    createDailyTask,
+    updateDailyTask,
     updateUser,
     fetchUserLogs,
     createArchive,
