@@ -228,7 +228,8 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     }
   })
   const currentControlDevice = computed(() => controlDashboard.devices.find(item => item.device_id === selectedDeviceId.value) || null)
-  const selectedArchive = computed(() => archiveDashboard.archives.find(item => item.id === selectedArchiveId.value) || null)
+  const activeArchives = computed(() => archiveDashboard.archives.filter(item => item.is_active !== false))
+  const selectedArchive = computed(() => activeArchives.value.find(item => item.id === selectedArchiveId.value) || null)
 
   const homeCards = computed(() => [
     { title: '监测区域', value: overview.summary.zone_count || 0, subtitle: `设备 ${overview.summary.device_count || 0} 台` },
@@ -256,12 +257,12 @@ export const useMonitoringStore = defineStore('monitoring', () => {
       selectedDeviceId.value = devices[0].device_id
     }
 
-    if (!selectedArchiveId.value && archiveDashboard.archives.length > 0) {
-      selectedArchiveId.value = archiveDashboard.archives[0].id
+    if (!selectedArchiveId.value && activeArchives.value.length > 0) {
+      selectedArchiveId.value = activeArchives.value[0].id
     }
 
-    if (selectedArchiveId.value && !archiveDashboard.archives.some(item => item.id === selectedArchiveId.value)) {
-      selectedArchiveId.value = archiveDashboard.archives[0]?.id ?? null
+    if (selectedArchiveId.value && !activeArchives.value.some(item => item.id === selectedArchiveId.value)) {
+      selectedArchiveId.value = activeArchives.value[0]?.id ?? null
     }
   }
 
