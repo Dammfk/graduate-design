@@ -1,7 +1,7 @@
 <template>
   <section class="toolbar-card">
-    <div class="toolbar-field">
-      <label>监测区域</label>
+    <div v-if="showZone" class="toolbar-field">
+      <label>分区切换</label>
       <select :value="selectedZone" @change="$emit('update:zone', $event.target.value)">
         <option v-for="zone in zoneOptions" :key="zone.zone_name" :value="zone.zone_name">
           {{ zone.zone_name }}（{{ zone.device_count }} 台设备）
@@ -9,7 +9,7 @@
       </select>
     </div>
 
-    <div class="toolbar-field">
+    <div v-if="showDevice" class="toolbar-field">
       <label>监测设备</label>
       <select :value="selectedDeviceId" @change="$emit('update:device', $event.target.value)">
         <option v-for="device in devices" :key="device.device_id" :value="device.device_id">
@@ -37,6 +37,8 @@ defineProps({
   selectedZone: { type: String, default: '' },
   selectedDeviceId: { type: String, default: '' },
   selectedHours: { type: Number, default: 24 },
+  showZone: { type: Boolean, default: true },
+  showDevice: { type: Boolean, default: true },
   showHours: { type: Boolean, default: false }
 })
 

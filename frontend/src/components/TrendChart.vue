@@ -129,7 +129,7 @@ watch(activeTab, updateChart)
 .trend-chart {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   height: 100%;
 }
 
@@ -137,7 +137,7 @@ watch(activeTab, updateChart)
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .eyebrow {
@@ -151,7 +151,7 @@ watch(activeTab, updateChart)
 h2 {
   margin: 0;
   color: #f3f7fa;
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .chart-tabs {
@@ -161,13 +161,14 @@ h2 {
 }
 
 .chart-tabs button {
-  padding: 8px 14px;
+  padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid rgba(164, 215, 210, 0.18);
   background: rgba(15, 48, 57, 0.6);
   color: #99b2b7;
   cursor: pointer;
   transition: 0.2s ease;
+  font-size: 13px;
 }
 
 .chart-tabs button.active,
@@ -179,7 +180,7 @@ h2 {
 
 .chart-container {
   flex: 1;
-  min-height: 320px;
+  min-height: 240px;
 }
 
 @media (max-width: 900px) {
