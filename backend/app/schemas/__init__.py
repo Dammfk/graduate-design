@@ -190,6 +190,10 @@ class AutomationRuleUpdate(BaseModel):
     is_enabled: bool
 
 
+class ControlCommandStatusUpdate(BaseModel):
+    status: str = Field(..., max_length=20)
+
+
 class ArchiveMetricsUpdate(BaseModel):
     average_weight: Optional[float] = None
     feed_consumption: Optional[float] = None

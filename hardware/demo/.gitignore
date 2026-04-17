@@ -1,0 +1,21 @@
+# Build outputs
+Debug/
+*.bin
+*.elf
+*.hex
+*.map
+*.o
+*.lst
+*.log
+
+# STM32CubeIDE / Eclipse temporary files
+.metadata/
+.settings/.cache/
+.settings/.internal/
+
+# VSCode / editor helpers
+.vscode/
+
+# Nested repo
+livestock/
+KE1South/

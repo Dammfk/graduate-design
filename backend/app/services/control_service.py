@@ -33,6 +33,30 @@ class ControlService:
     ]
 
     @staticmethod
+    def _has_inflight_command(
+        db: Session,
+        device_id: int,
+        target_component: str,
+        command_type: str,
+    ) -> bool:
+        latest = (
+            db.query(ControlCommandLog)
+            .filter(
+                ControlCommandLog.device_id == device_id,
+                ControlCommandLog.target_component == target_component,
+            )
+            .order_by(ControlCommandLog.executed_at.desc(), ControlCommandLog.id.desc())
+            .first()
+        )
+        if latest is None:
+            return False
+
+        if latest.command_type != command_type:
+            return False
+
+        return latest.status in ["pending", "sent", "success"]
+
+    @staticmethod
     def ensure_default_rules(db: Session) -> None:
         if db.query(AutomationRule).count() > 0:
             return
@@ -270,7 +294,7 @@ class ControlService:
             command_type=command_type.upper(),
             target_component=target_component,
             execution_mode=execution_mode,
-            status="success",
+            status="pending",
             reason=reason or "Manual control from web dashboard",
             operator_user_id=operator_user_id,
             payload=json.dumps(
@@ -317,6 +341,55 @@ class ControlService:
         }
 
     @staticmethod
+    def get_pending_commands(db: Session, device_id: str, limit: int = 10) -> list[dict]:
+        device = db.query(Device).filter(Device.device_id == device_id).first()
+        if not device:
+            raise ValueError(f"Device not found: {device_id}")
+
+        logs = (
+            db.query(ControlCommandLog)
+            .filter(
+                ControlCommandLog.device_id == device.id,
+                ControlCommandLog.status == "pending",
+            )
+            .order_by(ControlCommandLog.executed_at.asc(), ControlCommandLog.id.asc())
+            .limit(limit)
+            .all()
+        )
+
+        return [
+            {
+                "id": log.id,
+                "device_id": device.device_id,
+                "target_component": log.target_component,
+                "command_type": log.command_type,
+                "execution_mode": log.execution_mode,
+                "reason": log.reason,
+                "payload": json.loads(log.payload) if log.payload else None,
+                "executed_at": log.executed_at.isoformat() if log.executed_at else None,
+            }
+            for log in logs
+        ]
+
+    @staticmethod
+    def update_command_status(db: Session, command_id: int, status: str) -> dict:
+        log = db.query(ControlCommandLog).filter(ControlCommandLog.id == command_id).first()
+        if not log:
+            raise ValueError(f"Command not found: {command_id}")
+
+        log.status = status
+        db.commit()
+        db.refresh(log)
+
+        return {
+            "id": log.id,
+            "status": log.status,
+            "device_id": log.device.device_id if log.device else None,
+            "target_component": log.target_component,
+            "command_type": log.command_type,
+        }
+
+    @staticmethod
     async def generate_control_commands(db: Session, environment_data: EnvironmentData) -> list[dict]:
         ControlService.ensure_default_rules(db)
         device = db.query(Device).filter(Device.id == environment_data.device_id).first()
@@ -338,9 +411,18 @@ class ControlService:
             if not ControlService._compare(actual, rule.comparison_operator, rule.threshold_value):
                 continue
 
+            command_type = rule.action_command.upper()
+            if ControlService._has_inflight_command(
+                db=db,
+                device_id=device.id,
+                target_component=rule.target_component,
+                command_type=command_type,
+            ):
+                continue
+
             command = {
                 "device_id": device.device_id,
-                "command": f"{rule.target_component.upper()}_{rule.action_command.upper()}",
+                "command": f"{rule.target_component.upper()}_{command_type}",
                 "target_component": rule.target_component,
                 "reason": rule.description or rule.rule_name,
                 "priority": rule.priority,
@@ -351,10 +433,10 @@ class ControlService:
 
             log = ControlCommandLog(
                 device_id=device.id,
-                command_type=rule.action_command.upper(),
+                command_type=command_type,
                 target_component=rule.target_component,
                 execution_mode="auto",
-                status="success",
+                status="pending",
                 reason=rule.rule_name,
                 payload=json.dumps(snapshot, ensure_ascii=False),
                 executed_at=datetime.utcnow(),

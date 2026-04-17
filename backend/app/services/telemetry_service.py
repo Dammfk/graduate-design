@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
@@ -7,11 +7,64 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_redis_client
-from app.models import Device, EnvironmentData
+from app.models import Device, EnvironmentData, RoleEnum, User
 from app.schemas import EnvironmentDataCreate
 
 
 class TelemetryService:
+    AUTO_OWNER_USERNAME = "auto_device_owner"
+
+    @staticmethod
+    def _get_or_create_auto_owner(db: Session) -> User:
+        owner = (
+            db.query(User)
+            .filter(User.username == TelemetryService.AUTO_OWNER_USERNAME)
+            .first()
+        )
+        if owner:
+            return owner
+
+        owner = (
+            db.query(User)
+            .filter(User.role == RoleEnum.ADMIN)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if owner:
+            return owner
+
+        owner = User(
+            username=TelemetryService.AUTO_OWNER_USERNAME,
+            email="auto_device_owner@example.com",
+            password_hash="auto_generated_owner",
+            role=RoleEnum.ADMIN,
+            is_active=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(owner)
+        db.commit()
+        db.refresh(owner)
+        return owner
+
+    @staticmethod
+    def _auto_register_device(db: Session, device_id_str: str) -> Device:
+        owner = TelemetryService._get_or_create_auto_owner(db)
+        device = Device(
+            device_id=device_id_str,
+            device_name=f"自动注册设备 {device_id_str}",
+            device_type="stm32_controller",
+            location="未分配",
+            owner_id=owner.id,
+            is_active=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(device)
+        db.commit()
+        db.refresh(device)
+        return device
+
     @staticmethod
     async def save_environment_data(
         db: Session,
@@ -20,7 +73,7 @@ class TelemetryService:
     ) -> EnvironmentData:
         device = db.query(Device).filter(Device.device_id == device_id_str).first()
         if not device:
-            raise ValueError(f"Device not found: {device_id_str}")
+            device = TelemetryService._auto_register_device(db, device_id_str)
 
         db_data = EnvironmentData(
             device_id=device.id,
@@ -251,3 +304,4 @@ class TelemetryService:
             }
             for row in rows
         ]
+
