@@ -73,7 +73,8 @@ const monitoringStore = useMonitoringStore()
 const currentPath = ref(window.location.pathname || '/')
 const currentTime = ref(new Date().toLocaleString('zh-CN'))
 const isPageVisible = ref(typeof document === 'undefined' ? true : document.visibilityState === 'visible')
-let timer = null
+let clockTimer = null
+let refreshTimer = null
 
 const routes = [
   { path: '/', key: 'home', label: '总览首页', headline: '全局概览与快捷入口', icon: '总', description: '先看全局状态', component: markRaw(OverviewHome) },
@@ -120,11 +121,13 @@ onMounted(async () => {
   window.addEventListener('popstate', handlePopState)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await loadRouteData(currentRoute.value.key)
-  timer = window.setInterval(() => {
+  clockTimer = window.setInterval(() => {
     currentTime.value = new Date().toLocaleString('zh-CN')
+  }, 1000)
+  refreshTimer = window.setInterval(() => {
     if (!isPageVisible.value || monitoringStore.loading) return
     monitoringStore.loadModule(currentRoute.value.key, { silent: true })
-  }, 15000)
+  }, 5000)
 })
 
 watch(
@@ -137,7 +140,8 @@ watch(
 onBeforeUnmount(() => {
   window.removeEventListener('popstate', handlePopState)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  if (timer) window.clearInterval(timer)
+  if (clockTimer) window.clearInterval(clockTimer)
+  if (refreshTimer) window.clearInterval(refreshTimer)
 })
 </script>
 

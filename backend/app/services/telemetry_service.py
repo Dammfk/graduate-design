@@ -1,7 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -13,6 +14,15 @@ from app.schemas import EnvironmentDataCreate
 
 class TelemetryService:
     AUTO_OWNER_USERNAME = "auto_device_owner"
+    DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+    @staticmethod
+    def _to_display_iso(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(TelemetryService.DISPLAY_TIMEZONE).isoformat()
 
     @staticmethod
     def _get_or_create_auto_owner(db: Session) -> User:
@@ -105,7 +115,7 @@ class TelemetryService:
                 "humidity": data.humidity,
                 "co2_concentration": data.co2_concentration,
                 "ammonia_concentration": data.ammonia_concentration,
-                "recorded_at": data.recorded_at.isoformat() if data.recorded_at else None,
+                "recorded_at": TelemetryService._to_display_iso(data.recorded_at),
             }
             redis_client.setex(cache_key, 3600, json.dumps(cache_data))
         except Exception as exc:
@@ -171,9 +181,9 @@ class TelemetryService:
             "zone_name": zone_name,
             "is_active": device.is_active,
             "latest_data_timestamp": (
-                latest.recorded_at.isoformat()
+                TelemetryService._to_display_iso(latest.recorded_at)
                 if latest and latest.recorded_at
-                else device.latest_data_timestamp.isoformat()
+                else TelemetryService._to_display_iso(device.latest_data_timestamp)
                 if device.latest_data_timestamp
                 else None
             ),
@@ -182,7 +192,7 @@ class TelemetryService:
                 "humidity": latest.humidity if latest else None,
                 "co2_concentration": latest.co2_concentration if latest else None,
                 "ammonia_concentration": latest.ammonia_concentration if latest else None,
-                "recorded_at": latest.recorded_at.isoformat() if latest and latest.recorded_at else None,
+                "recorded_at": TelemetryService._to_display_iso(latest.recorded_at) if latest and latest.recorded_at else None,
             },
         }
 
@@ -296,7 +306,7 @@ class TelemetryService:
         )
         return [
             {
-                "timestamp": row.recorded_at.isoformat(),
+                "timestamp": TelemetryService._to_display_iso(row.recorded_at),
                 "temperature": round(row.temperature, 1) if row.temperature is not None else None,
                 "humidity": round(row.humidity, 1) if row.humidity is not None else None,
                 "co2_concentration": round(row.co2_concentration, 1) if row.co2_concentration is not None else None,

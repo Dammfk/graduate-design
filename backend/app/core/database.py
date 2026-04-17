@@ -40,13 +40,12 @@ def get_redis_client() -> redis.Redis:
     return redis_client
 
 
-def get_db() -> Session:
+def get_db():
     db = SessionLocal()
     try:
-        return db
-    except Exception:
+        yield db
+    finally:
         db.close()
-        raise
 
 
 async def init_redis() -> None:

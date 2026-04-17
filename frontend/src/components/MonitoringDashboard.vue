@@ -242,7 +242,7 @@ onMounted(async () => {
   await monitoringStore.initMonitoring()
   refreshTimer = setInterval(() => {
     monitoringStore.refreshMonitoring()
-  }, 15000)
+  }, 5000)
 })
 
 onUnmounted(() => {

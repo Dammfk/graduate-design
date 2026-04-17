@@ -46,7 +46,7 @@ class SerialBridge:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.poll_interval = poll_interval
-        self.last_poll_time = 0.0
+        self.last_poll_time = time.time() + max(2.0, poll_interval)
         self.session = requests.Session()
         self.serial = serial.Serial(port=port, baudrate=baudrate, timeout=read_timeout)
         self.known_devices: set[str] = {device_id for device_id in initial_devices if device_id}

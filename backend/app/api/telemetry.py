@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ async def receive_telemetry(
                 "device_id": telemetry.device_id,
                 "alarms_created": len(alarms),
                 "commands_generated": len(commands),
-                "timestamp": environment_data.recorded_at,
+                "timestamp": TelemetryService._to_display_iso(environment_data.recorded_at),
             },
         }
     except ValueError as exc:
@@ -128,7 +128,7 @@ async def get_latest_telemetry(
                 "humidity": db_data.humidity,
                 "co2_concentration": db_data.co2_concentration,
                 "ammonia_concentration": db_data.ammonia_concentration,
-                "recorded_at": db_data.recorded_at.isoformat(),
+                "recorded_at": TelemetryService._to_display_iso(db_data.recorded_at),
             },
         }
     except HTTPException:
@@ -167,7 +167,7 @@ async def get_telemetry_history(
             "count": len(data_list),
             "data": [
                 {
-                    "timestamp": item.recorded_at.isoformat(),
+                    "timestamp": TelemetryService._to_display_iso(item.recorded_at),
                     "temperature": item.temperature,
                     "humidity": item.humidity,
                     "co2_concentration": item.co2_concentration,
