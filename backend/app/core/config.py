@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
@@ -10,6 +11,20 @@ class Settings(BaseSettings):
     APP_NAME: str = "Greenhouse Monitoring System"
     API_VERSION: str = "v1"
     DEBUG: bool = True
+    SQL_ECHO: bool = False
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def normalize_debug(cls, value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "debug", "dev"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "release", "prod", "production"}:
+                return False
+        return value
     
     # 数据库类型 (sqlite, mysql)
     DATABASE_TYPE: str = "sqlite"

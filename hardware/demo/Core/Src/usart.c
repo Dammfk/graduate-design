@@ -3,6 +3,7 @@
 #include <string.h>
 
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart3;
 
 static uint8_t uart_rx_byte = 0U;
 static char uart_line_buffer[128];
@@ -23,6 +24,25 @@ void MX_USART1_UART_Init(void)
   huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
 
   if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void MX_USART3_UART_Init(void)
+{
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 9600;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+
+  if (HAL_UART_Init(&huart3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -68,6 +88,26 @@ HAL_StatusTypeDef APP_UART_SendText(const char *text)
   }
 
   return HAL_UART_Transmit(&huart1, (uint8_t *)text, (uint16_t)strlen(text), 100U);
+}
+
+HAL_StatusTypeDef APP_NB_UART_SendText(const char *text)
+{
+  if (text == NULL)
+  {
+    return HAL_ERROR;
+  }
+
+  return HAL_UART_Transmit(&huart3, (uint8_t *)text, (uint16_t)strlen(text), 1000U);
+}
+
+HAL_StatusTypeDef APP_NB_UART_ReadByte(uint8_t *value, uint32_t timeout_ms)
+{
+  if (value == NULL)
+  {
+    return HAL_ERROR;
+  }
+
+  return HAL_UART_Receive(&huart3, value, 1U, timeout_ms);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)

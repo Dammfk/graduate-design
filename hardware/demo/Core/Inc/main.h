@@ -84,6 +84,14 @@ void Error_Handler(void);
 #define SHT3X_SDA_Pin GPIO_PIN_14
 #define SHT3X_SDA_GPIO_Port GPIOB
 
+/* K1 button, active low */
+#define K1_Pin GPIO_PIN_13
+#define K1_GPIO_Port GPIOC
+
+/* K2 button, active low */
+#define K2_Pin GPIO_PIN_15
+#define K2_GPIO_Port GPIOA
+
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

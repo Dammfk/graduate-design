@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1500" viewBox="0 0 1200 1500">
+  <defs>
+    <style>
+      .box { fill: #ffffff; stroke: #000000; stroke-width: 1.2; }
+      .line { fill: none; stroke: #000000; stroke-width: 1.1; stroke-linecap: square; stroke-linejoin: miter; }
+      .arrow { fill: none; stroke: #000000; stroke-width: 1.1; marker-end: url(#arrow); }
+      .text { font-family: "Microsoft YaHei", "SimSun", sans-serif; font-size: 18px; fill: #000000; }
+      .small { font-family: "Microsoft YaHei", "SimSun", sans-serif; font-size: 16px; fill: #000000; }
+      .title { font-family: "Microsoft YaHei", "SimSun", sans-serif; font-size: 18px; font-weight: 600; fill: #000000; }
+      .actor-text { font-family: "Microsoft YaHei", "SimSun", sans-serif; font-size: 17px; fill: #000000; }
+      .usecase { fill: #ffffff; stroke: #000000; stroke-width: 1.2; }
+      .actor { stroke: #000000; stroke-width: 1.2; fill: none; stroke-linecap: round; }
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#000000"/>
+    </marker>
+  </defs>
+
+  <rect x="45" y="25" width="1090" height="1415" class="box"/>
+  <text x="70" y="55" class="title">数字化养殖大棚监控系统</text>
+
+  <!-- Actors -->
+  <g id="actor-admin" transform="translate(90,210)">
+    <circle cx="0" cy="0" r="10" class="actor"/>
+    <line x1="0" y1="10" x2="0" y2="52" class="actor"/>
+    <line x1="-25" y1="26" x2="25" y2="26" class="actor"/>
+    <line x1="0" y1="52" x2="-22" y2="86" class="actor"/>
+    <line x1="0" y1="52" x2="22" y2="86" class="actor"/>
+    <text x="-25" y="118" class="actor-text">管理员</text>
+  </g>
+
+  <g id="actor-tech" transform="translate(90,690)">
+    <circle cx="0" cy="0" r="10" class="actor"/>
+    <line x1="0" y1="10" x2="0" y2="52" class="actor"/>
+    <line x1="-25" y1="26" x2="25" y2="26" class="actor"/>
+    <line x1="0" y1="52" x2="-22" y2="86" class="actor"/>
+    <line x1="0" y1="52" x2="22" y2="86" class="actor"/>
+    <text x="-33" y="118" class="actor-text">技术人员</text>
+  </g>
+
+  <g id="actor-worker" transform="translate(90,1160)">
+    <circle cx="0" cy="0" r="10" class="actor"/>
+    <line x1="0" y1="10" x2="0" y2="52" class="actor"/>
+    <line x1="-25" y1="26" x2="25" y2="26" class="actor"/>
+    <line x1="0" y1="52" x2="-22" y2="86" class="actor"/>
+    <line x1="0" y1="52" x2="22" y2="86" class="actor"/>
+    <text x="-50" y="118" class="actor-text">普通工作人员</text>
+  </g>
+
+  <!-- helper: usecase ellipses -->
+  <!-- Admin root bus -->
+  <path d="M115 236 H210 V150 M210 236 V455" class="line"/>
+  <path d="M210 150 H300" class="arrow"/>
+  <path d="M210 260 H300" class="arrow"/>
+  <path d="M210 365 H300" class="arrow"/>
+  <path d="M210 455 H300" class="arrow"/>
+
+  <ellipse cx="390" cy="150" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="156" class="small">用户管理</text>
+  <ellipse cx="390" cy="260" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="266" class="small">设备管理</text>
+  <ellipse cx="390" cy="365" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="371" class="small">设备控制</text>
+  <ellipse cx="390" cy="455" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="461" class="small">系统管理</text>
+
+  <!-- Admin detail branches -->
+  <path d="M478 150 H540 V95 M540 150 V205" class="line"/>
+  <path d="M540 95 H600" class="arrow"/>
+  <path d="M540 132 H600" class="arrow"/>
+  <path d="M540 168 H600" class="arrow"/>
+  <path d="M540 205 H600" class="arrow"/>
+  <ellipse cx="690" cy="95" rx="88" ry="25" class="usecase"/><text x="652" y="101" class="small">添加用户</text>
+  <ellipse cx="690" cy="132" rx="88" ry="25" class="usecase"/><text x="637" y="138" class="small">修改用户信息</text>
+  <ellipse cx="690" cy="168" rx="88" ry="25" class="usecase"/><text x="652" y="174" class="small">删除用户</text>
+  <ellipse cx="690" cy="205" rx="88" ry="25" class="usecase"/><text x="652" y="211" class="small">查询用户</text>
+
+  <path d="M478 260 H540 V238 M540 260 V318" class="line"/>
+  <path d="M540 238 H600" class="arrow"/>
+  <path d="M540 275 H600" class="arrow"/>
+  <path d="M540 318 H600" class="arrow"/>
+  <ellipse cx="690" cy="238" rx="88" ry="25" class="usecase"/><text x="652" y="244" class="small">添加设备</text>
+  <ellipse cx="690" cy="275" rx="88" ry="25" class="usecase"/><text x="637" y="281" class="small">修改设备信息</text>
+  <ellipse cx="690" cy="318" rx="88" ry="25" class="usecase"/><text x="652" y="324" class="small">查询设备</text>
+
+  <path d="M478 365 H540 V345 M540 365 V410" class="line"/>
+  <path d="M540 345 H600" class="arrow"/>
+  <path d="M540 382 H600" class="arrow"/>
+  <path d="M540 410 H600" class="arrow"/>
+  <ellipse cx="690" cy="345" rx="88" ry="25" class="usecase"/><text x="637" y="351" class="small">手动控制设备</text>
+  <ellipse cx="690" cy="382" rx="88" ry="25" class="usecase"/><text x="637" y="388" class="small">设置自动规则</text>
+  <ellipse cx="690" cy="410" rx="88" ry="25" class="usecase"/><text x="637" y="416" class="small">查看控制记录</text>
+
+  <path d="M478 455 H540 V438 M540 455 V492" class="line"/>
+  <path d="M540 438 H600" class="arrow"/>
+  <path d="M540 492 H600" class="arrow"/>
+  <ellipse cx="690" cy="438" rx="88" ry="25" class="usecase"/><text x="637" y="444" class="small">查看系统状态</text>
+  <ellipse cx="690" cy="492" rx="88" ry="25" class="usecase"/><text x="637" y="498" class="small">查看操作日志</text>
+
+  <!-- Tech root bus -->
+  <path d="M115 716 H210 V610 M210 716 V890" class="line"/>
+  <path d="M210 610 H300" class="arrow"/>
+  <path d="M210 705 H300" class="arrow"/>
+  <path d="M210 800 H300" class="arrow"/>
+  <path d="M210 890 H300" class="arrow"/>
+  <ellipse cx="390" cy="610" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="616" class="small">环境监测</text>
+  <ellipse cx="390" cy="705" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="711" class="small">告警管理</text>
+  <ellipse cx="390" cy="800" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="806" class="small">运行维护</text>
+  <ellipse cx="390" cy="890" rx="103" ry="28" class="usecase"/>
+  <text x="330" y="896" class="small">数据查询与统计</text>
+
+  <path d="M478 610 H540 V590 M540 610 V650" class="line"/>
+  <path d="M540 590 H600" class="arrow"/>
+  <path d="M540 620 H600" class="arrow"/>
+  <path d="M540 650 H600" class="arrow"/>
+  <ellipse cx="690" cy="590" rx="88" ry="25" class="usecase"/><text x="637" y="596" class="small">查看实时数据</text>
+  <ellipse cx="690" cy="620" rx="88" ry="25" class="usecase"/><text x="637" y="626" class="small">查询历史数据</text>
+  <ellipse cx="690" cy="650" rx="88" ry="25" class="usecase"/><text x="637" y="656" class="small">查看趋势图表</text>
+
+  <path d="M478 705 H540 V690 M540 705 V745" class="line"/>
+  <path d="M540 690 H600" class="arrow"/>
+  <path d="M540 720 H600" class="arrow"/>
+  <path d="M540 745 H600" class="arrow"/>
+  <ellipse cx="690" cy="690" rx="88" ry="25" class="usecase"/><text x="637" y="696" class="small">查看告警信息</text>
+  <ellipse cx="690" cy="720" rx="88" ry="25" class="usecase"/><text x="652" y="726" class="small">确认告警</text>
+  <ellipse cx="690" cy="745" rx="88" ry="25" class="usecase"/><text x="652" y="751" class="small">处理告警</text>
+
+  <path d="M478 800 H540 V780 M540 800 V830" class="line"/>
+  <path d="M540 780 H600" class="arrow"/>
+  <path d="M540 810 H600" class="arrow"/>
+  <path d="M540 830 H600" class="arrow"/>
+  <ellipse cx="690" cy="780" rx="88" ry="25" class="usecase"/><text x="637" y="786" class="small">查看运行状态</text>
+  <ellipse cx="690" cy="810" rx="88" ry="25" class="usecase"/><text x="637" y="816" class="small">检查系统日志</text>
+  <ellipse cx="690" cy="830" rx="88" ry="25" class="usecase"/><text x="637" y="836" class="small">维护设备记录</text>
+
+  <path d="M493 890 H540 V870 M540 890 V930" class="line"/>
+  <path d="M540 870 H600" class="arrow"/>
+  <path d="M540 900 H600" class="arrow"/>
+  <path d="M540 930 H600" class="arrow"/>
+  <ellipse cx="690" cy="870" rx="88" ry="25" class="usecase"/><text x="637" y="876" class="small">查询环境数据</text>
+  <ellipse cx="690" cy="900" rx="88" ry="25" class="usecase"/><text x="637" y="906" class="small">查询设备记录</text>
+  <ellipse cx="690" cy="930" rx="88" ry="25" class="usecase"/><text x="637" y="936" class="small">查询告警记录</text>
+
+  <!-- Worker root bus -->
+  <path d="M115 1186 H210 V1060 M210 1186 V1320" class="line"/>
+  <path d="M210 1060 H300" class="arrow"/>
+  <path d="M210 1160 H300" class="arrow"/>
+  <path d="M210 1250 H300" class="arrow"/>
+  <path d="M210 1320 H300" class="arrow"/>
+  <ellipse cx="390" cy="1060" rx="103" ry="28" class="usecase"/>
+  <text x="330" y="1066" class="small">养殖档案管理</text>
+  <ellipse cx="390" cy="1160" rx="88" ry="28" class="usecase"/>
+  <text x="335" y="1166" class="small">日常任务处理</text>
+  <ellipse cx="390" cy="1250" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="1256" class="small">告警查看</text>
+  <ellipse cx="390" cy="1320" rx="88" ry="28" class="usecase"/>
+  <text x="350" y="1326" class="small">个人信息</text>
+
+  <path d="M493 1060 H540 V1035 M540 1060 V1105" class="line"/>
+  <path d="M540 1035 H600" class="arrow"/>
+  <path d="M540 1070 H600" class="arrow"/>
+  <path d="M540 1105 H600" class="arrow"/>
+  <ellipse cx="690" cy="1035" rx="88" ry="25" class="usecase"/><text x="637" y="1041" class="small">添加批次档案</text>
+  <ellipse cx="690" cy="1070" rx="88" ry="25" class="usecase"/><text x="637" y="1076" class="small">修改档案信息</text>
+  <ellipse cx="690" cy="1105" rx="88" ry="25" class="usecase"/><text x="637" y="1111" class="small">查询档案信息</text>
+
+  <path d="M478 1160 H540 V1142 M540 1160 V1195" class="line"/>
+  <path d="M540 1142 H600" class="arrow"/>
+  <path d="M540 1168 H600" class="arrow"/>
+  <path d="M540 1195 H600" class="arrow"/>
+  <ellipse cx="690" cy="1142" rx="88" ry="25" class="usecase"/><text x="652" y="1148" class="small">查看任务</text>
+  <ellipse cx="690" cy="1168" rx="88" ry="25" class="usecase"/><text x="652" y="1174" class="small">处理任务</text>
+  <ellipse cx="690" cy="1195" rx="88" ry="25" class="usecase"/><text x="637" y="1201" class="small">录入日常信息</text>
+
+  <path d="M478 1250 H540 V1235 M540 1250 V1265" class="line"/>
+  <path d="M540 1235 H600" class="arrow"/>
+  <path d="M540 1265 H600" class="arrow"/>
+  <ellipse cx="690" cy="1235" rx="88" ry="25" class="usecase"/><text x="637" y="1241" class="small">查看告警提示</text>
+  <ellipse cx="690" cy="1265" rx="88" ry="25" class="usecase"/><text x="637" y="1271" class="small">提交处理记录</text>
+
+  <path d="M478 1320 H540 V1305 M540 1320 V1335" class="line"/>
+  <path d="M540 1305 H600" class="arrow"/>
+  <path d="M540 1335 H600" class="arrow"/>
+  <ellipse cx="690" cy="1305" rx="88" ry="25" class="usecase"/><text x="637" y="1311" class="small">修改个人信息</text>
+  <ellipse cx="690" cy="1335" rx="88" ry="25" class="usecase"/><text x="652" y="1341" class="small">修改密码</text>
+</svg>

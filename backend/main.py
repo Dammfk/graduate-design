@@ -17,13 +17,18 @@ Base.metadata.create_all(bind=engine)
 
 
 def ensure_runtime_schema() -> None:
+    if settings.DATABASE_TYPE != "sqlite":
+        return
+
     with engine.begin() as connection:
         columns = {
             row[1]
             for row in connection.exec_driver_sql("PRAGMA table_info('daily_tasks')").fetchall()
         }
         if "status" not in columns:
-            connection.exec_driver_sql("ALTER TABLE daily_tasks ADD COLUMN status VARCHAR(20) DEFAULT 'pending' NOT NULL")
+            connection.exec_driver_sql(
+                "ALTER TABLE daily_tasks ADD COLUMN status VARCHAR(20) DEFAULT 'pending' NOT NULL"
+            )
         if "completed_at" not in columns:
             connection.exec_driver_sql("ALTER TABLE daily_tasks ADD COLUMN completed_at DATETIME")
 
@@ -132,6 +137,7 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=8000,
             reload=settings.DEBUG,
+            access_log=False,
         )
     finally:
         stop_frontend_dev_server(frontend_process)

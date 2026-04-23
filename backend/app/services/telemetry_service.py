@@ -118,8 +118,8 @@ class TelemetryService:
                 "recorded_at": TelemetryService._to_display_iso(data.recorded_at),
             }
             redis_client.setex(cache_key, 3600, json.dumps(cache_data))
-        except Exception as exc:
-            print(f"Error caching data to Redis: {exc}")
+        except Exception:
+            pass
 
     @staticmethod
     def get_latest_data_from_cache(device_id: str) -> dict | None:
@@ -129,8 +129,8 @@ class TelemetryService:
             data = redis_client.get(cache_key)
             if data:
                 return json.loads(data)
-        except Exception as exc:
-            print(f"Error getting cache data from Redis: {exc}")
+        except Exception:
+            pass
         return None
 
     @staticmethod

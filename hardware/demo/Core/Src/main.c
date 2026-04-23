@@ -41,7 +41,22 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define APP_DEVICE_ID "DEVICE_001"
-#define APP_TELEMETRY_INTERVAL_MS 5000U
+#define APP_TELEMETRY_INTERVAL_MS 15000U
+#define APP_NB_TELEMETRY_ENABLED 1
+#define APP_NB_RESPONSE_DRAIN_MS 1500U
+#define APP_NB_DOWNLINK_POLL_INTERVAL_MS 10000U
+#define APP_NB_DOWNLINK_READ_MS 700U
+#define APP_NB_BOOT_READY_WAIT_MS 2000U
+#define APP_NB_READY_CHECK_INTERVAL_MS 3000U
+#define APP_NB_ATTACH_WAIT_MS 2500U
+#define APP_NB_ATTACH_RETRY_INTERVAL_MS 5000U
+#define APP_NB_IDLE_GAP_MS 120U
+#define APP_NB_SERVER_ADDR "221.229.214.202"
+#define APP_NB_SERVER_PORT 5683U
+#define APP_NB_APN "CTNB"
+#define APP_UPLOAD_TOGGLE_CLICKS 3U
+#define APP_UPLOAD_TOGGLE_WINDOW_MS 1200U
+#define APP_K1_DEBOUNCE_MS 60U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -58,6 +73,11 @@ static const float RELAY1_OFF_THRESHOLD_C = 24.0f;
 static bool relay1_manual_override = false;
 static GPIO_PinState relay1_manual_state = GPIO_PIN_RESET;
 static bool relay1_auto_on = false;
+static bool nb_upload_enabled = false;
+static bool nb_network_ready = false;
+static bool nb_downlink_poll_enabled = false;
+static bool nb_pending_first_telemetry = false;
+static bool nb_trace_enabled = true;
 
 /* USER CODE END PV */
 
@@ -82,6 +102,25 @@ static void App_FormatFixed1(char *buffer, size_t buffer_size, const char *prefi
 static void App_FormatNumberFixed1(char *buffer, size_t buffer_size, float value);
 static void App_ApplyRelayState(GPIO_TypeDef *port, uint16_t pin, bool is_on);
 static void App_SendTelemetry(float temperature, float humidity, bool sensor_ok);
+static void App_NbInit(void);
+static bool App_NbSendCommand(const char *command, uint32_t wait_ms);
+static bool App_NbSendPayload(const char *payload);
+static bool App_BytesToHex(const char *input, char *output, size_t output_size);
+static int App_HexNibble(char value);
+static bool App_HexToText(const char *input, char *output, size_t output_size);
+static size_t App_NbReadResponse(char *buffer, size_t buffer_size, uint32_t timeout_ms);
+static void App_NbDrainResponse(uint32_t timeout_ms);
+static void App_NbMirrorPendingOutput(void);
+static void App_NbSetReady(bool ready);
+static bool App_NbQueryNetworkReady(bool trace);
+static void App_NbPollDownlink(void);
+static void App_NbHandleResponse(const char *response);
+static bool App_NbResponseHasToken(const char *response, const char *token);
+static bool App_NbResponseIsSuccess(const char *response);
+static void App_SetUploadEnabled(bool enabled);
+static void App_HandleK1UploadToggle(void);
+static void App_SetDownlinkPollEnabled(bool enabled);
+static void App_HandleK2DownlinkToggle(void);
 static void App_SendAck(long command_id, const char *status);
 static bool App_ExtractJsonString(const char *json, const char *key, char *value, size_t value_size);
 static bool App_ExtractJsonLong(const char *json, const char *key, long *value);
@@ -357,6 +396,7 @@ static void App_ApplyRelayState(GPIO_TypeDef *port, uint16_t pin, bool is_on)
 static void App_SendTelemetry(float temperature, float humidity, bool sensor_ok)
 {
   char message[160];
+  char pc_message[168];
   char temperature_text[12];
   char humidity_text[12];
 
@@ -367,9 +407,444 @@ static void App_SendTelemetry(float temperature, float humidity, bool sensor_ok)
   App_FormatNumberFixed1(temperature_text, sizeof(temperature_text), temperature);
   App_FormatNumberFixed1(humidity_text, sizeof(humidity_text), humidity);
   snprintf(message, sizeof(message),
-           "{\"device_id\":\"%s\",\"temperature\":%s,\"humidity\":%s,\"co2_concentration\":null,\"ammonia_concentration\":null}\r\n",
+           "{\"device_id\":\"%s\",\"temperature\":%s,\"humidity\":%s,\"co2_concentration\":null,\"ammonia_concentration\":null}",
            APP_DEVICE_ID, temperature_text, humidity_text);
-  APP_UART_SendText(message);
+  snprintf(pc_message, sizeof(pc_message), "%s\r\n", message);
+  APP_UART_SendText(pc_message);
+
+#if APP_NB_TELEMETRY_ENABLED
+  (void)App_NbSendPayload(message);
+#endif
+}
+
+static void App_NbInit(void)
+{
+#if APP_NB_TELEMETRY_ENABLED
+  char command[96];
+
+  App_NbSetReady(false);
+  HAL_Delay(APP_NB_BOOT_READY_WAIT_MS);
+  App_NbDrainResponse(300U);
+  (void)App_NbSendCommand("ATE1\r\n", 1000U);
+  (void)App_NbSendCommand("AT+CFUN=0\r\n", 3000U);
+  snprintf(command, sizeof(command), "AT+NCDP=%s,%u\r\n", APP_NB_SERVER_ADDR, APP_NB_SERVER_PORT);
+  (void)App_NbSendCommand(command, 1500U);
+  (void)App_NbSendCommand("AT+CFUN=1\r\n", 5000U);
+  HAL_Delay(3000U);
+  snprintf(command, sizeof(command), "AT+CGDCONT=1,\"IP\",\"%s\"\r\n", APP_NB_APN);
+  (void)App_NbSendCommand(command, 1500U);
+  (void)App_NbSendCommand("AT+CGATT=1\r\n", 1500U);
+  (void)App_NbQueryNetworkReady(true);
+#endif
+}
+
+static bool App_NbSendCommand(const char *command, uint32_t wait_ms)
+{
+  char response[256];
+
+  if (command == NULL) {
+    return false;
+  }
+
+  App_NbDrainResponse(80U);
+  if (APP_NB_UART_SendText(command) != HAL_OK) {
+    return false;
+  }
+
+  if (App_NbReadResponse(response, sizeof(response), wait_ms) == 0U) {
+    return false;
+  }
+
+  return App_NbResponseIsSuccess(response);
+}
+
+static bool App_NbSendPayload(const char *payload)
+{
+  char hex_payload[320];
+  char at_command[352];
+  size_t payload_length = 0U;
+
+  if ((payload == NULL) || (payload[0] == '\0')) {
+    return false;
+  }
+
+  if (!nb_network_ready) {
+    return false;
+  }
+
+  payload_length = strlen(payload);
+  if ((payload_length == 0U) || (payload_length > 159U)) {
+    return false;
+  }
+
+  if (!App_BytesToHex(payload, hex_payload, sizeof(hex_payload))) {
+    return false;
+  }
+
+  snprintf(at_command, sizeof(at_command), "AT+NMGS=%u,%s\r\n", (unsigned int)payload_length, hex_payload);
+  if (!App_NbSendCommand(at_command, APP_NB_RESPONSE_DRAIN_MS)) {
+    App_NbSetReady(false);
+    return false;
+  }
+
+  return true;
+}
+
+static bool App_BytesToHex(const char *input, char *output, size_t output_size)
+{
+  static const char hex_chars[] = "0123456789ABCDEF";
+  size_t input_length = 0U;
+  size_t i = 0U;
+
+  if ((input == NULL) || (output == NULL) || (output_size == 0U)) {
+    return false;
+  }
+
+  input_length = strlen(input);
+  if ((input_length * 2U + 1U) > output_size) {
+    return false;
+  }
+
+  for (i = 0U; i < input_length; ++i) {
+    uint8_t value = (uint8_t)input[i];
+    output[i * 2U] = hex_chars[(value >> 4U) & 0x0FU];
+    output[i * 2U + 1U] = hex_chars[value & 0x0FU];
+  }
+  output[input_length * 2U] = '\0';
+
+  return true;
+}
+
+static void App_NbDrainResponse(uint32_t timeout_ms)
+{
+  char response[256];
+  (void)App_NbReadResponse(response, sizeof(response), timeout_ms);
+}
+
+static void App_NbMirrorPendingOutput(void)
+{
+#if APP_NB_TELEMETRY_ENABLED
+  uint8_t value = 0U;
+  char response[256];
+  size_t length = 0U;
+
+  while (APP_NB_UART_ReadByte(&value, 1U) == HAL_OK) {
+    (void)HAL_UART_Transmit(&huart1, &value, 1U, 20U);
+    if (length < (sizeof(response) - 1U)) {
+      response[length++] = (char)value;
+      response[length] = '\0';
+    }
+  }
+
+  if (length > 0U) {
+    App_NbHandleResponse(response);
+  }
+#endif
+}
+
+static void App_NbSetReady(bool ready)
+{
+  if (nb_network_ready == ready) {
+    return;
+  }
+
+  nb_network_ready = ready;
+}
+
+static bool App_NbQueryNetworkReady(bool trace)
+{
+#if APP_NB_TELEMETRY_ENABLED
+  char response[256];
+  bool attached = false;
+  bool registered = false;
+  bool mo_ready = false;
+  bool previous_trace = nb_trace_enabled;
+
+  nb_trace_enabled = trace;
+  App_NbDrainResponse(80U);
+
+  if (APP_NB_UART_SendText("AT+CGATT?\r\n") == HAL_OK) {
+    if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
+      attached = (strstr(response, "+CGATT:1") != NULL);
+    }
+  }
+
+  if (attached) {
+    if (APP_NB_UART_SendText("AT+CEREG?\r\n") == HAL_OK) {
+      if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
+        registered = (strstr(response, "+CEREG:0,1") != NULL) || (strstr(response, "+CEREG:1,1") != NULL);
+      }
+    }
+
+    if (APP_NB_UART_SendText("AT+NMSTATUS?\r\n") == HAL_OK) {
+      if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
+        mo_ready = (strstr(response, "MO_DATA_ENABLED") != NULL);
+      }
+    }
+  }
+
+  nb_trace_enabled = previous_trace;
+  App_NbSetReady(attached && registered && mo_ready);
+  return nb_network_ready;
+#else
+  (void)trace;
+  return false;
+#endif
+}
+
+static bool App_NbResponseHasToken(const char *response, const char *token)
+{
+  return (response != NULL) && (token != NULL) && (strstr(response, token) != NULL);
+}
+
+static bool App_NbResponseIsSuccess(const char *response)
+{
+  if (response == NULL) {
+    return false;
+  }
+
+  if (App_NbResponseHasToken(response, "+CME ERROR") ||
+      App_NbResponseHasToken(response, "+CMS ERROR") ||
+      App_NbResponseHasToken(response, "ERROR")) {
+    return false;
+  }
+
+  return App_NbResponseHasToken(response, "OK");
+}
+
+static int App_HexNibble(char value)
+{
+  if ((value >= '0') && (value <= '9')) {
+    return value - '0';
+  }
+  if ((value >= 'A') && (value <= 'F')) {
+    return value - 'A' + 10;
+  }
+  if ((value >= 'a') && (value <= 'f')) {
+    return value - 'a' + 10;
+  }
+  return -1;
+}
+
+static bool App_HexToText(const char *input, char *output, size_t output_size)
+{
+  size_t input_length = 0U;
+  size_t i = 0U;
+  size_t out_index = 0U;
+
+  if ((input == NULL) || (output == NULL) || (output_size == 0U)) {
+    return false;
+  }
+
+  input_length = strlen(input);
+  if ((input_length == 0U) || ((input_length % 2U) != 0U) || ((input_length / 2U + 1U) > output_size)) {
+    return false;
+  }
+
+  for (i = 0U; i < input_length; i += 2U) {
+    int high = App_HexNibble(input[i]);
+    int low = App_HexNibble(input[i + 1U]);
+    if ((high < 0) || (low < 0)) {
+      return false;
+    }
+    output[out_index++] = (char)((high << 4) | low);
+  }
+  output[out_index] = '\0';
+
+  return true;
+}
+
+static size_t App_NbReadResponse(char *buffer, size_t buffer_size, uint32_t timeout_ms)
+{
+  uint8_t value = 0U;
+  uint32_t start_tick = HAL_GetTick();
+  uint32_t last_data_tick = start_tick;
+  size_t length = 0U;
+
+  if ((buffer == NULL) || (buffer_size == 0U)) {
+    return 0U;
+  }
+
+  while ((HAL_GetTick() - start_tick) < timeout_ms) {
+    if (APP_NB_UART_ReadByte(&value, 20U) != HAL_OK) {
+      continue;
+    }
+    last_data_tick = HAL_GetTick();
+    if (nb_trace_enabled) {
+      (void)HAL_UART_Transmit(&huart1, &value, 1U, 20U);
+    }
+    if (length < (buffer_size - 1U)) {
+      buffer[length++] = (char)value;
+      buffer[length] = '\0';
+      if (App_NbResponseHasToken(buffer, "\r\nOK\r\n") ||
+          App_NbResponseHasToken(buffer, "\r\nERROR\r\n") ||
+          App_NbResponseHasToken(buffer, "+CME ERROR") ||
+          App_NbResponseHasToken(buffer, "+CMS ERROR")) {
+        break;
+      }
+    }
+  }
+
+  buffer[length] = '\0';
+  return length;
+}
+
+static void App_NbPollDownlink(void)
+{
+#if APP_NB_TELEMETRY_ENABLED
+  char response[256];
+
+  if (!nb_network_ready) {
+    return;
+  }
+
+  App_NbDrainResponse(80U);
+  if (APP_NB_UART_SendText("AT+NMGR\r\n") != HAL_OK) {
+    App_NbSetReady(false);
+    return;
+  }
+  if (App_NbReadResponse(response, sizeof(response), APP_NB_DOWNLINK_READ_MS) > 0U) {
+    App_NbHandleResponse(response);
+  }
+#endif
+}
+
+static void App_NbHandleResponse(const char *response)
+{
+  const char *cursor = response;
+
+  if (response == NULL) {
+    return;
+  }
+
+  while ((cursor = strchr(cursor, '+')) != NULL) {
+    if ((strncmp(cursor, "+NNMI:", 6U) == 0) || (strncmp(cursor, "+NMGR:", 6U) == 0)) {
+      const char *comma = strchr(cursor, ',');
+      char hex_payload[192];
+      char decoded_payload[96];
+      size_t hex_length = 0U;
+
+      if (comma != NULL) {
+        ++comma;
+        while ((App_HexNibble(*comma) >= 0) && (hex_length < (sizeof(hex_payload) - 1U))) {
+          hex_payload[hex_length++] = *comma++;
+        }
+        hex_payload[hex_length] = '\0';
+
+        if (App_HexToText(hex_payload, decoded_payload, sizeof(decoded_payload))) {
+          if (decoded_payload[0] == '{') {
+            App_HandleCommandLine(decoded_payload);
+          }
+        }
+      }
+    }
+    ++cursor;
+  }
+}
+
+static void App_SetUploadEnabled(bool enabled)
+{
+  const char *log_text = enabled ? "[NB UPLOAD] ON\r\n" : "[NB UPLOAD] OFF\r\n";
+
+  nb_upload_enabled = enabled;
+  nb_pending_first_telemetry = enabled;
+  APP_UART_SendText(log_text);
+  App_ShowLine(0, 3, enabled ? "NB:ON 3xK1 OFF" : "NB:OFF 3xK1 ON ");
+}
+
+static void App_HandleK1UploadToggle(void)
+{
+  static GPIO_PinState last_raw_state = GPIO_PIN_SET;
+  static GPIO_PinState stable_state = GPIO_PIN_SET;
+  static uint32_t last_change_tick = 0U;
+  static uint32_t first_click_tick = 0U;
+  static uint8_t click_count = 0U;
+
+  GPIO_PinState raw_state = HAL_GPIO_ReadPin(K1_GPIO_Port, K1_Pin);
+  uint32_t now = HAL_GetTick();
+
+  if (raw_state != last_raw_state) {
+    last_raw_state = raw_state;
+    last_change_tick = now;
+  }
+
+  if ((now - last_change_tick) < APP_K1_DEBOUNCE_MS) {
+    return;
+  }
+
+  if (raw_state == stable_state) {
+    if ((click_count > 0U) && ((now - first_click_tick) > APP_UPLOAD_TOGGLE_WINDOW_MS)) {
+      click_count = 0U;
+    }
+    return;
+  }
+
+  stable_state = raw_state;
+  if (stable_state == GPIO_PIN_RESET) {
+    if ((click_count == 0U) || ((now - first_click_tick) > APP_UPLOAD_TOGGLE_WINDOW_MS)) {
+      first_click_tick = now;
+      click_count = 1U;
+    } else {
+      ++click_count;
+    }
+
+    if (click_count >= APP_UPLOAD_TOGGLE_CLICKS) {
+      click_count = 0U;
+      App_SetUploadEnabled(!nb_upload_enabled);
+    }
+  }
+}
+
+static void App_SetDownlinkPollEnabled(bool enabled)
+{
+  const char *log_text = enabled ? "[NB DOWNLINK] ON\r\n" : "[NB DOWNLINK] OFF\r\n";
+
+  nb_downlink_poll_enabled = enabled;
+  APP_UART_SendText(log_text);
+  App_ShowLine(64, 3, enabled ? "DL:ON 3xK2" : "DL:OFF 3xK2");
+}
+
+static void App_HandleK2DownlinkToggle(void)
+{
+  static GPIO_PinState last_raw_state = GPIO_PIN_SET;
+  static GPIO_PinState stable_state = GPIO_PIN_SET;
+  static uint32_t last_change_tick = 0U;
+  static uint32_t first_click_tick = 0U;
+  static uint8_t click_count = 0U;
+
+  GPIO_PinState raw_state = HAL_GPIO_ReadPin(K2_GPIO_Port, K2_Pin);
+  uint32_t now = HAL_GetTick();
+
+  if (raw_state != last_raw_state) {
+    last_raw_state = raw_state;
+    last_change_tick = now;
+  }
+
+  if ((now - last_change_tick) < APP_K1_DEBOUNCE_MS) {
+    return;
+  }
+
+  if (raw_state == stable_state) {
+    if ((click_count > 0U) && ((now - first_click_tick) > APP_UPLOAD_TOGGLE_WINDOW_MS)) {
+      click_count = 0U;
+    }
+    return;
+  }
+
+  stable_state = raw_state;
+  if (stable_state == GPIO_PIN_RESET) {
+    if ((click_count == 0U) || ((now - first_click_tick) > APP_UPLOAD_TOGGLE_WINDOW_MS)) {
+      first_click_tick = now;
+      click_count = 1U;
+    } else {
+      ++click_count;
+    }
+
+    if (click_count >= APP_UPLOAD_TOGGLE_CLICKS) {
+      click_count = 0U;
+      App_SetDownlinkPollEnabled(!nb_downlink_poll_enabled);
+    }
+  }
 }
 
 static void App_SendAck(long command_id, const char *status)
@@ -502,6 +977,8 @@ int main(void)
   bool has_valid_sensor_data = false;
   uint32_t last_update_tick = 0U;
   uint32_t last_telemetry_tick = 0U;
+  uint32_t last_downlink_poll_tick = 0U;
+  uint32_t last_network_ready_check_tick = 0U;
   char uart_line[128];
 
   /* USER CODE END 1 */
@@ -525,6 +1002,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART1_UART_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   APP_UART_StartReceiveIT();
   HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin|LED_G_Pin|LED_B_Pin, GPIO_PIN_SET);
@@ -534,6 +1012,10 @@ int main(void)
   App_ShowLine(64, 0, "R2:OFF");
   App_ShowLine(0, 2, "T:WAIT");
   App_ShowLine(64, 2, "H:WAIT");
+  App_SetUploadEnabled(false);
+  App_SetDownlinkPollEnabled(false);
+  App_NbInit();
+  last_network_ready_check_tick = HAL_GetTick() - 1000U;
 
   /* USER CODE END 2 */
 
@@ -545,6 +1027,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    App_HandleK1UploadToggle();
+    App_HandleK2DownlinkToggle();
+
     if (APP_UART_GetLine(uart_line, sizeof(uart_line)) != 0U) {
       App_HandleCommandLine(uart_line);
     }
@@ -570,10 +1055,26 @@ int main(void)
       App_UpdateDisplay(temperature, humidity, has_valid_sensor_data);
     }
 
-    if (has_valid_sensor_data && ((HAL_GetTick() - last_telemetry_tick) >= APP_TELEMETRY_INTERVAL_MS)) {
+    if (!nb_network_ready && ((HAL_GetTick() - last_network_ready_check_tick) >= APP_NB_READY_CHECK_INTERVAL_MS)) {
+      last_network_ready_check_tick = HAL_GetTick();
+      (void)App_NbQueryNetworkReady(true);
+    }
+
+    if (nb_upload_enabled && nb_network_ready && nb_pending_first_telemetry && has_valid_sensor_data) {
+      last_telemetry_tick = HAL_GetTick();
+      App_SendTelemetry(temperature, humidity, sensor_ok);
+      nb_pending_first_telemetry = false;
+    } else if (nb_upload_enabled && nb_network_ready && has_valid_sensor_data && ((HAL_GetTick() - last_telemetry_tick) >= APP_TELEMETRY_INTERVAL_MS)) {
       last_telemetry_tick = HAL_GetTick();
       App_SendTelemetry(temperature, humidity, sensor_ok);
     }
+
+    if (nb_downlink_poll_enabled && ((HAL_GetTick() - last_downlink_poll_tick) >= APP_NB_DOWNLINK_POLL_INTERVAL_MS)) {
+      last_downlink_poll_tick = HAL_GetTick();
+      App_NbPollDownlink();
+    }
+
+    App_NbMirrorPendingOutput();
   }
   /* USER CODE END 3 */
 }
@@ -661,6 +1162,3 @@ void assert_failed(uint8_t *file, uint32_t line)
 #endif /* USE_FULL_ASSERT */
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
-
-
-

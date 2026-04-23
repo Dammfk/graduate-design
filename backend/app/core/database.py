@@ -10,13 +10,13 @@ from .config import settings
 if "sqlite" in settings.SQLALCHEMY_DATABASE_URL:
     engine = create_engine(
         settings.SQLALCHEMY_DATABASE_URL,
-        echo=settings.DEBUG,
+        echo=settings.SQL_ECHO,
         connect_args={"check_same_thread": False},
     )
 else:
     engine = create_engine(
         settings.SQLALCHEMY_DATABASE_URL,
-        echo=settings.DEBUG,
+        echo=settings.SQL_ECHO,
         pool_size=20,
         max_overflow=0,
     )
