@@ -27,6 +27,9 @@ PAYLOAD_KEYS = {
     "raw_data",
     "serviceData",
     "service_data",
+    "APPdata",
+    "appData",
+    "app_data",
 }
 
 DEVICE_ID_KEYS = {
@@ -110,6 +113,11 @@ def _maybe_decode_text(value: str) -> str:
 
 def _parse_payload(payload: Any) -> dict[str, Any]:
     if isinstance(payload, dict):
+        app_data = _find_first_value(payload, {"APPdata", "appData", "app_data"})
+        if app_data is not None:
+            parsed = _parse_payload(app_data)
+            if parsed:
+                return parsed
         return payload
 
     if isinstance(payload, list):
