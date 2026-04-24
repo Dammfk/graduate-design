@@ -49,7 +49,7 @@
 #define APP_NB_BOOT_READY_WAIT_MS 2000U
 #define APP_NB_READY_CHECK_INTERVAL_MS 3000U
 #define APP_NB_ATTACH_WAIT_MS 2500U
-#define APP_NB_ATTACH_RETRY_INTERVAL_MS 5000U
+#define APP_NB_ATTACH_RETRY_INTERVAL_MS 3000U
 #define APP_NB_IDLE_GAP_MS 120U
 #define APP_NB_SERVER_ADDR "221.229.214.202"
 #define APP_NB_SERVER_PORT 5683U
@@ -78,6 +78,13 @@ static bool nb_network_ready = false;
 static bool nb_downlink_poll_enabled = false;
 static bool nb_pending_first_telemetry = false;
 static bool nb_trace_enabled = true;
+static bool app_main_screen_active = false;
+static bool nb_last_attached = false;
+static bool nb_last_registered = false;
+static bool nb_last_mo_ready = false;
+static uint32_t nb_last_attach_retry_tick = 0U;
+static bool nb_boot_success_pending = false;
+static uint32_t nb_boot_success_tick = 0U;
 
 /* USER CODE END PV */
 
@@ -95,6 +102,9 @@ static uint8_t SHT3X_ReadByte(bool ack);
 static bool SHT3X_ReadMeasurement(float *temperature, float *humidity);
 static bool SHT3X_CheckCrc(const uint8_t *data, uint8_t crc);
 static void App_ShowLine(uint8_t x, uint8_t page, const char *text);
+static void App_ShowBootStatus(const char *title, const char *detail);
+static void App_DrawMainScreen(void);
+static void App_UpdateStatusLine(void);
 static void App_UpdateDisplay(float temperature, float humidity, bool sensor_ok);
 static const char *App_RelayStateText(GPIO_PinState pin_state);
 static void App_UpdateField(uint8_t x, uint8_t page, char *cache, size_t cache_size, const char *text);
@@ -326,6 +336,36 @@ static void App_ShowLine(uint8_t x, uint8_t page, const char *text)
   OLED_ShowString(x, page, line);
 }
 
+static void App_ShowBootStatus(const char *title, const char *detail)
+{
+  OLED_Clear();
+  App_ShowLine(0, 0, "NB-IOT CONNECT");
+  App_ShowLine(0, 1, title != NULL ? title : "");
+  App_ShowLine(0, 2, detail != NULL ? detail : "");
+  App_ShowLine(0, 3, "WAIT...");
+}
+
+static void App_UpdateStatusLine(void)
+{
+  char line[22];
+
+  snprintf(line, sizeof(line), "UP:%s DO:%s",
+           nb_upload_enabled ? "ON" : "OFF",
+           nb_downlink_poll_enabled ? "ON" : "OFF");
+  App_ShowLine(0, 3, line);
+}
+
+static void App_DrawMainScreen(void)
+{
+  OLED_Clear();
+  App_ShowLine(0, 0, "R1:OFF");
+  App_ShowLine(64, 0, "R2:OFF");
+  App_ShowLine(0, 2, "T:WAIT");
+  App_ShowLine(64, 2, "H:WAIT");
+  App_UpdateStatusLine();
+  app_main_screen_active = true;
+}
+
 static void App_UpdateField(uint8_t x, uint8_t page, char *cache, size_t cache_size, const char *text)
 {
   char field[11];
@@ -372,6 +412,10 @@ static void App_UpdateDisplay(float temperature, float humidity, bool sensor_ok)
   static char t_cache[11] = "";
   static char h_cache[11] = "";
   char line[16];
+
+  if (!app_main_screen_active) {
+    return;
+  }
 
   snprintf(line, sizeof(line), "R1:%s", App_RelayStateText(HAL_GPIO_ReadPin(RELAY1_GPIO_Port, RELAY1_Pin)));
   App_UpdateField(0, 0, r1_cache, sizeof(r1_cache), line);
@@ -423,17 +467,26 @@ static void App_NbInit(void)
   char command[96];
 
   App_NbSetReady(false);
+  nb_last_attached = false;
+  nb_last_registered = false;
+  nb_last_mo_ready = false;
+  nb_boot_success_pending = false;
+  nb_boot_success_tick = 0U;
+  App_ShowBootStatus("STATUS: START", "POWER ON +2S");
   HAL_Delay(APP_NB_BOOT_READY_WAIT_MS);
   App_NbDrainResponse(300U);
+  App_ShowBootStatus("STATUS: INIT", "ATE1 / CFUN / NCDP");
   (void)App_NbSendCommand("ATE1\r\n", 1000U);
   (void)App_NbSendCommand("AT+CFUN=0\r\n", 3000U);
   snprintf(command, sizeof(command), "AT+NCDP=%s,%u\r\n", APP_NB_SERVER_ADDR, APP_NB_SERVER_PORT);
   (void)App_NbSendCommand(command, 1500U);
   (void)App_NbSendCommand("AT+CFUN=1\r\n", 5000U);
   HAL_Delay(3000U);
+  App_ShowBootStatus("STATUS: ATTACH", "WAIT NETWORK");
   snprintf(command, sizeof(command), "AT+CGDCONT=1,\"IP\",\"%s\"\r\n", APP_NB_APN);
   (void)App_NbSendCommand(command, 1500U);
   (void)App_NbSendCommand("AT+CGATT=1\r\n", 1500U);
+  nb_last_attach_retry_tick = HAL_GetTick();
   (void)App_NbQueryNetworkReady(true);
 #endif
 }
@@ -583,6 +636,9 @@ static bool App_NbQueryNetworkReady(bool trace)
     }
   }
 
+  nb_last_attached = attached;
+  nb_last_registered = registered;
+  nb_last_mo_ready = mo_ready;
   nb_trace_enabled = previous_trace;
   App_NbSetReady(attached && registered && mo_ready);
   return nb_network_ready;
@@ -749,7 +805,9 @@ static void App_SetUploadEnabled(bool enabled)
   nb_upload_enabled = enabled;
   nb_pending_first_telemetry = enabled;
   APP_UART_SendText(log_text);
-  App_ShowLine(0, 3, enabled ? "NB:ON 3xK1 OFF" : "NB:OFF 3xK1 ON ");
+  if (app_main_screen_active) {
+    App_UpdateStatusLine();
+  }
 }
 
 static void App_HandleK1UploadToggle(void)
@@ -801,7 +859,9 @@ static void App_SetDownlinkPollEnabled(bool enabled)
 
   nb_downlink_poll_enabled = enabled;
   APP_UART_SendText(log_text);
-  App_ShowLine(64, 3, enabled ? "DL:ON 3xK2" : "DL:OFF 3xK2");
+  if (app_main_screen_active) {
+    App_UpdateStatusLine();
+  }
 }
 
 static void App_HandleK2DownlinkToggle(void)
@@ -973,6 +1033,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
   float temperature = 0.0f;
   float humidity = 0.0f;
+  char boot_detail[22];
   bool sensor_ok = false;
   bool has_valid_sensor_data = false;
   uint32_t last_update_tick = 0U;
@@ -1008,14 +1069,16 @@ int main(void)
   HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin|LED_G_Pin|LED_B_Pin, GPIO_PIN_SET);
   OLED_Init();
   OLED_Clear();
-  App_ShowLine(0, 0, "R1:OFF");
-  App_ShowLine(64, 0, "R2:OFF");
-  App_ShowLine(0, 2, "T:WAIT");
-  App_ShowLine(64, 2, "H:WAIT");
+  app_main_screen_active = false;
   App_SetUploadEnabled(false);
   App_SetDownlinkPollEnabled(false);
   App_NbInit();
-  last_network_ready_check_tick = HAL_GetTick() - 1000U;
+  snprintf(boot_detail, sizeof(boot_detail), "A:%d R:%d M:%d",
+           nb_last_attached ? 1 : 0,
+           nb_last_registered ? 1 : 0,
+           nb_last_mo_ready ? 1 : 0);
+  App_ShowBootStatus("STATUS: ATTACH", boot_detail);
+  last_network_ready_check_tick = HAL_GetTick();
 
   /* USER CODE END 2 */
 
@@ -1055,7 +1118,27 @@ int main(void)
       App_UpdateDisplay(temperature, humidity, has_valid_sensor_data);
     }
 
-    if (!nb_network_ready && ((HAL_GetTick() - last_network_ready_check_tick) >= APP_NB_READY_CHECK_INTERVAL_MS)) {
+    if (!app_main_screen_active) {
+      if (!nb_network_ready && ((HAL_GetTick() - last_network_ready_check_tick) >= APP_NB_READY_CHECK_INTERVAL_MS)) {
+        last_network_ready_check_tick = HAL_GetTick();
+        (void)App_NbQueryNetworkReady(true);
+        snprintf(boot_detail, sizeof(boot_detail), "A:%d R:%d M:%d",
+                 nb_last_attached ? 1 : 0,
+                 nb_last_registered ? 1 : 0,
+                 nb_last_mo_ready ? 1 : 0);
+        App_ShowBootStatus("STATUS: ATTACH", boot_detail);
+      }
+
+      if (nb_network_ready) {
+        if (!nb_boot_success_pending) {
+          App_ShowBootStatus("STATUS: SUCCESS", "NETWORK READY");
+          nb_boot_success_pending = true;
+          nb_boot_success_tick = HAL_GetTick();
+        } else if ((HAL_GetTick() - nb_boot_success_tick) >= 1000U) {
+          App_DrawMainScreen();
+        }
+      }
+    } else if (!nb_network_ready && ((HAL_GetTick() - last_network_ready_check_tick) >= APP_NB_READY_CHECK_INTERVAL_MS)) {
       last_network_ready_check_tick = HAL_GetTick();
       (void)App_NbQueryNetworkReady(true);
     }
