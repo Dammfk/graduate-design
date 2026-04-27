@@ -3,7 +3,7 @@
     <aside class="sidebar">
       <div class="brand">
         <p class="brand-kicker">Smart Ranch OS</p>
-        <h1>智慧养殖协同平台</h1>
+        <h1>智慧养殖云平台</h1>
         <p class="brand-text">把监测、控制、档案、预警、任务和权限拆成清晰模块，操作更聚焦。</p>
       </div>
 

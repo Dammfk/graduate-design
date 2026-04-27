@@ -73,9 +73,14 @@ static const float RELAY1_OFF_THRESHOLD_C = 24.0f;
 static bool relay1_manual_override = false;
 static GPIO_PinState relay1_manual_state = GPIO_PIN_RESET;
 static bool relay1_auto_on = false;
+static bool relay2_manual_override = false;
+static GPIO_PinState relay2_manual_state = GPIO_PIN_RESET;
+static bool fill_light_manual_override = false;
+static GPIO_PinState fill_light_manual_state = GPIO_PIN_RESET;
 static bool nb_upload_enabled = false;
 static bool nb_network_ready = false;
 static bool nb_downlink_poll_enabled = false;
+static bool nb_pending_immediate_downlink_poll = false;
 static bool nb_pending_first_telemetry = false;
 static bool nb_trace_enabled = true;
 static bool app_main_screen_active = false;
@@ -111,6 +116,7 @@ static void App_UpdateField(uint8_t x, uint8_t page, char *cache, size_t cache_s
 static void App_FormatFixed1(char *buffer, size_t buffer_size, const char *prefix, float value, const char *suffix);
 static void App_FormatNumberFixed1(char *buffer, size_t buffer_size, float value);
 static void App_ApplyRelayState(GPIO_TypeDef *port, uint16_t pin, bool is_on);
+static void App_ApplyFillLightState(bool is_on);
 static void App_SendTelemetry(float temperature, float humidity, bool sensor_ok);
 static void App_NbInit(void);
 static bool App_NbSendCommand(const char *command, uint32_t wait_ms);
@@ -118,6 +124,11 @@ static bool App_NbSendPayload(const char *payload);
 static bool App_BytesToHex(const char *input, char *output, size_t output_size);
 static int App_HexNibble(char value);
 static bool App_HexToText(const char *input, char *output, size_t output_size);
+static bool App_HexToBytes(const char *input, uint8_t *output, size_t output_size, size_t *decoded_length);
+static int App_Base64Value(char value);
+static bool App_Base64ToText(const char *input, char *output, size_t output_size);
+static bool App_TryHandleDecodedDownlink(const char *payload_text);
+static bool App_TryHandleLegacyCtDownlink(const char *hex_payload);
 static size_t App_NbReadResponse(char *buffer, size_t buffer_size, uint32_t timeout_ms);
 static void App_NbDrainResponse(uint32_t timeout_ms);
 static void App_NbMirrorPendingOutput(void);
@@ -437,6 +448,13 @@ static void App_ApplyRelayState(GPIO_TypeDef *port, uint16_t pin, bool is_on)
   HAL_GPIO_WritePin(port, pin, is_on ? RELAY_ACTIVE_STATE : GPIO_PIN_RESET);
 }
 
+static void App_ApplyFillLightState(bool is_on)
+{
+  GPIO_PinState led_state = is_on ? GPIO_PIN_RESET : GPIO_PIN_SET;
+
+  HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin | LED_G_Pin | LED_B_Pin, led_state);
+}
+
 static void App_SendTelemetry(float temperature, float humidity, bool sensor_ok)
 {
   char message[160];
@@ -486,6 +504,7 @@ static void App_NbInit(void)
   snprintf(command, sizeof(command), "AT+CGDCONT=1,\"IP\",\"%s\"\r\n", APP_NB_APN);
   (void)App_NbSendCommand(command, 1500U);
   (void)App_NbSendCommand("AT+CGATT=1\r\n", 1500U);
+  (void)App_NbSendCommand("AT+NNMI=2\r\n", 1500U);
   nb_last_attach_retry_tick = HAL_GetTick();
   (void)App_NbQueryNetworkReady(true);
 #endif
@@ -608,9 +627,9 @@ static bool App_NbQueryNetworkReady(bool trace)
 {
 #if APP_NB_TELEMETRY_ENABLED
   char response[256];
-  bool attached = false;
-  bool registered = false;
-  bool mo_ready = false;
+  bool attached = nb_last_attached;
+  bool registered = nb_last_registered;
+  bool mo_ready = nb_last_mo_ready;
   bool previous_trace = nb_trace_enabled;
 
   nb_trace_enabled = trace;
@@ -622,17 +641,20 @@ static bool App_NbQueryNetworkReady(bool trace)
     }
   }
 
-  if (attached) {
-    if (APP_NB_UART_SendText("AT+CEREG?\r\n") == HAL_OK) {
-      if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
-        registered = (strstr(response, "+CEREG:0,1") != NULL) || (strstr(response, "+CEREG:1,1") != NULL);
-      }
+  if (!attached) {
+    registered = false;
+    mo_ready = false;
+  } else if (APP_NB_UART_SendText("AT+CEREG?\r\n") == HAL_OK) {
+    if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
+      registered = (strstr(response, "+CEREG:0,1") != NULL) || (strstr(response, "+CEREG:1,1") != NULL);
     }
+  }
 
-    if (APP_NB_UART_SendText("AT+NMSTATUS?\r\n") == HAL_OK) {
-      if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
-        mo_ready = (strstr(response, "MO_DATA_ENABLED") != NULL);
-      }
+  if (!registered) {
+    mo_ready = false;
+  } else if (APP_NB_UART_SendText("AT+NMSTATUS?\r\n") == HAL_OK) {
+    if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
+      mo_ready = (strstr(response, "MO_DATA_ENABLED") != NULL);
     }
   }
 
@@ -710,6 +732,182 @@ static bool App_HexToText(const char *input, char *output, size_t output_size)
   return true;
 }
 
+static bool App_HexToBytes(const char *input, uint8_t *output, size_t output_size, size_t *decoded_length)
+{
+  size_t input_length = 0U;
+  size_t out_index = 0U;
+  size_t i = 0U;
+
+  if ((input == NULL) || (output == NULL) || (output_size == 0U)) {
+    return false;
+  }
+
+  input_length = strlen(input);
+  if ((input_length == 0U) || ((input_length % 2U) != 0U) || ((input_length / 2U) > output_size)) {
+    return false;
+  }
+
+  for (i = 0U; i < input_length; i += 2U) {
+    int high = App_HexNibble(input[i]);
+    int low = App_HexNibble(input[i + 1U]);
+
+    if ((high < 0) || (low < 0)) {
+      return false;
+    }
+
+    output[out_index++] = (uint8_t)((high << 4) | low);
+  }
+
+  if (decoded_length != NULL) {
+    *decoded_length = out_index;
+  }
+
+  return true;
+}
+
+static int App_Base64Value(char value)
+{
+  if ((value >= 'A') && (value <= 'Z')) {
+    return value - 'A';
+  }
+  if ((value >= 'a') && (value <= 'z')) {
+    return value - 'a' + 26;
+  }
+  if ((value >= '0') && (value <= '9')) {
+    return value - '0' + 52;
+  }
+  if (value == '+') {
+    return 62;
+  }
+  if (value == '/') {
+    return 63;
+  }
+  if (value == '=') {
+    return -2;
+  }
+  return -1;
+}
+
+static bool App_Base64ToText(const char *input, char *output, size_t output_size)
+{
+  size_t out_index = 0U;
+  int block[4];
+  int block_index = 0;
+  const char *cursor = input;
+
+  if ((input == NULL) || (output == NULL) || (output_size == 0U)) {
+    return false;
+  }
+
+  while (*cursor != '\0') {
+    int value = App_Base64Value(*cursor++);
+    if (value < 0) {
+      if (value == -2) {
+        block[block_index++] = -2;
+      } else {
+        continue;
+      }
+    } else {
+      block[block_index++] = value;
+    }
+
+    if (block_index == 4) {
+      uint32_t triple = 0U;
+      int padding = 0;
+      int i = 0;
+
+      for (i = 0; i < 4; ++i) {
+        if (block[i] == -2) {
+          block[i] = 0;
+          ++padding;
+        }
+        triple = (triple << 6U) | (uint32_t)block[i];
+      }
+
+      if ((out_index + 3U) >= output_size) {
+        return false;
+      }
+
+      output[out_index++] = (char)((triple >> 16U) & 0xFFU);
+      if (padding < 2) {
+        output[out_index++] = (char)((triple >> 8U) & 0xFFU);
+      }
+      if (padding < 1) {
+        output[out_index++] = (char)(triple & 0xFFU);
+      }
+      block_index = 0;
+    }
+  }
+
+  output[out_index] = '\0';
+  return out_index > 0U;
+}
+
+static bool App_TryHandleDecodedDownlink(const char *payload_text)
+{
+  char decoded_base64[160];
+
+  if (payload_text == NULL) {
+    return false;
+  }
+
+  if (payload_text[0] == '{') {
+    App_HandleCommandLine(payload_text);
+    return true;
+  }
+
+  if (App_Base64ToText(payload_text, decoded_base64, sizeof(decoded_base64)) && (decoded_base64[0] == '{')) {
+    App_HandleCommandLine(decoded_base64);
+    return true;
+  }
+
+  return false;
+}
+
+static bool App_TryHandleLegacyCtDownlink(const char *hex_payload)
+{
+  uint8_t packet[64];
+  size_t packet_length = 0U;
+  uint8_t user_cmd = 0U;
+
+  if (!App_HexToBytes(hex_payload, packet, sizeof(packet), &packet_length)) {
+    return false;
+  }
+
+  if (packet_length < 6U) {
+    return false;
+  }
+
+  if (packet[0] != 0x01U) {
+    return false;
+  }
+
+  user_cmd = packet[3];
+
+  switch (user_cmd) {
+    case 0x01U: /* CTL_LED */
+      fill_light_manual_override = true;
+      fill_light_manual_state = (fill_light_manual_state == GPIO_PIN_SET) ? GPIO_PIN_RESET : GPIO_PIN_SET;
+      App_ApplyFillLightState(fill_light_manual_state == GPIO_PIN_SET);
+      return true;
+
+    case 0x03U: /* CTL_SWITCH_1 */
+      relay1_manual_override = true;
+      relay1_manual_state = (relay1_manual_state == RELAY_ACTIVE_STATE) ? GPIO_PIN_RESET : RELAY_ACTIVE_STATE;
+      App_ApplyRelayState(RELAY1_GPIO_Port, RELAY1_Pin, relay1_manual_state == RELAY_ACTIVE_STATE);
+      return true;
+
+    case 0x04U: /* CTL_SWITCH_2 */
+      relay2_manual_override = true;
+      relay2_manual_state = (relay2_manual_state == RELAY_ACTIVE_STATE) ? GPIO_PIN_RESET : RELAY_ACTIVE_STATE;
+      App_ApplyRelayState(RELAY2_GPIO_Port, RELAY2_Pin, relay2_manual_state == RELAY_ACTIVE_STATE);
+      return true;
+
+    default:
+      return false;
+  }
+}
+
 static size_t App_NbReadResponse(char *buffer, size_t buffer_size, uint32_t timeout_ms)
 {
   uint8_t value = 0U;
@@ -749,6 +947,7 @@ static void App_NbPollDownlink(void)
 {
 #if APP_NB_TELEMETRY_ENABLED
   char response[256];
+  char queue_status[128];
 
   if (!nb_network_ready) {
     return;
@@ -762,6 +961,10 @@ static void App_NbPollDownlink(void)
   if (App_NbReadResponse(response, sizeof(response), APP_NB_DOWNLINK_READ_MS) > 0U) {
     App_NbHandleResponse(response);
   }
+
+  if (APP_NB_UART_SendText("AT+NQMGR\r\n") == HAL_OK) {
+    (void)App_NbReadResponse(queue_status, sizeof(queue_status), 800U);
+  }
 #endif
 }
 
@@ -773,28 +976,73 @@ static void App_NbHandleResponse(const char *response)
     return;
   }
 
-  while ((cursor = strchr(cursor, '+')) != NULL) {
-    if ((strncmp(cursor, "+NNMI:", 6U) == 0) || (strncmp(cursor, "+NMGR:", 6U) == 0)) {
-      const char *comma = strchr(cursor, ',');
-      char hex_payload[192];
-      char decoded_payload[96];
-      size_t hex_length = 0U;
+  while (*cursor != '\0') {
+    const char *line_end = strstr(cursor, "\r\n");
+    size_t line_length = line_end != NULL ? (size_t)(line_end - cursor) : strlen(cursor);
+    char line[256];
+    const char *payload_start = NULL;
+    char hex_payload[224];
+    char decoded_payload[160];
+    size_t hex_length = 0U;
 
-      if (comma != NULL) {
-        ++comma;
-        while ((App_HexNibble(*comma) >= 0) && (hex_length < (sizeof(hex_payload) - 1U))) {
-          hex_payload[hex_length++] = *comma++;
-        }
-        hex_payload[hex_length] = '\0';
+    if (line_length >= sizeof(line)) {
+      line_length = sizeof(line) - 1U;
+    }
 
-        if (App_HexToText(hex_payload, decoded_payload, sizeof(decoded_payload))) {
-          if (decoded_payload[0] == '{') {
-            App_HandleCommandLine(decoded_payload);
-          }
+    memcpy(line, cursor, line_length);
+    line[line_length] = '\0';
+
+    while ((line[0] == ' ') || (line[0] == '\t')) {
+      memmove(line, line + 1, strlen(line));
+    }
+
+    if ((strncmp(line, "+NNMI:", 6U) == 0) || (strncmp(line, "+NMGR:", 6U) == 0)) {
+      const char *scan = line;
+      while ((scan = strchr(scan, ',')) != NULL) {
+        const char *candidate = scan + 1;
+        while ((*candidate == ' ') || (*candidate == '\t') || (*candidate == '"')) {
+          ++candidate;
         }
+        if (App_HexNibble(*candidate) >= 0) {
+          payload_start = candidate;
+          break;
+        }
+        scan = candidate;
+      }
+    } else if ((line[0] >= '0') && (line[0] <= '9')) {
+      const char *scan = line;
+      while ((scan = strchr(scan, ',')) != NULL) {
+        const char *candidate = scan + 1;
+        while ((*candidate == ' ') || (*candidate == '\t') || (*candidate == '"')) {
+          ++candidate;
+        }
+        if (App_HexNibble(*candidate) >= 0) {
+          payload_start = candidate;
+          break;
+        }
+        scan = candidate;
       }
     }
-    ++cursor;
+
+    if (payload_start != NULL) {
+      while ((App_HexNibble(*payload_start) >= 0) && (hex_length < (sizeof(hex_payload) - 1U))) {
+        hex_payload[hex_length++] = *payload_start++;
+      }
+      hex_payload[hex_length] = '\0';
+
+      if (App_HexToText(hex_payload, decoded_payload, sizeof(decoded_payload))) {
+        if (!App_TryHandleDecodedDownlink(decoded_payload)) {
+          (void)App_TryHandleLegacyCtDownlink(hex_payload);
+        }
+      } else {
+        (void)App_TryHandleLegacyCtDownlink(hex_payload);
+      }
+    }
+
+    if (line_end == NULL) {
+      break;
+    }
+    cursor = line_end + 2U;
   }
 }
 
@@ -858,6 +1106,7 @@ static void App_SetDownlinkPollEnabled(bool enabled)
   const char *log_text = enabled ? "[NB DOWNLINK] ON\r\n" : "[NB DOWNLINK] OFF\r\n";
 
   nb_downlink_poll_enabled = enabled;
+  nb_pending_immediate_downlink_poll = enabled;
   APP_UART_SendText(log_text);
   if (app_main_screen_active) {
     App_UpdateStatusLine();
@@ -915,6 +1164,15 @@ static void App_SendAck(long command_id, const char *status)
            "{\"device_id\":\"%s\",\"type\":\"ack\",\"command_id\":%ld,\"status\":\"%s\"}\r\n",
            APP_DEVICE_ID, command_id, status);
   APP_UART_SendText(message);
+#if APP_NB_TELEMETRY_ENABLED
+  if (nb_network_ready) {
+    char nb_message[96];
+    snprintf(nb_message, sizeof(nb_message),
+             "{\"device_id\":\"%s\",\"type\":\"ack\",\"command_id\":%ld,\"status\":\"%s\"}",
+             APP_DEVICE_ID, command_id, status);
+    (void)App_NbSendPayload(nb_message);
+  }
+#endif
 }
 
 static bool App_ExtractJsonString(const char *json, const char *key, char *value, size_t value_size)
@@ -984,9 +1242,19 @@ static void App_HandleCommandLine(const char *line)
   }
 
   target_ok = App_ExtractJsonString(line, "target", target, sizeof(target));
+  if (!target_ok) {
+    target_ok = App_ExtractJsonString(line, "target_component", target, sizeof(target));
+  }
   command_ok = App_ExtractJsonString(line, "command", command, sizeof(command));
+  if (!command_ok) {
+    command_ok = App_ExtractJsonString(line, "command_type", command, sizeof(command));
+  }
 
-  if (!App_ExtractJsonLong(line, "command_id", &command_id) || !target_ok || !command_ok) {
+  if (!App_ExtractJsonLong(line, "command_id", &command_id)) {
+    (void)App_ExtractJsonLong(line, "id", &command_id);
+  }
+
+  if ((command_id == 0L) || !target_ok || !command_ok) {
     return;
   }
 
@@ -1007,12 +1275,36 @@ static void App_HandleCommandLine(const char *line)
     } else {
       App_SendAck(command_id, "unsupported");
     }
-  } else if ((strcmp(target, "relay2") == 0) || (strcmp(target, "cooling_pad") == 0) || (strcmp(target, "pump") == 0) || (strcmp(target, "fill_light") == 0)) {
+  } else if ((strcmp(target, "relay2") == 0) || (strcmp(target, "cooling_pad") == 0) || (strcmp(target, "pump") == 0)) {
     if (strcmp(command, "ON") == 0) {
+      relay2_manual_override = true;
+      relay2_manual_state = RELAY_ACTIVE_STATE;
       App_ApplyRelayState(RELAY2_GPIO_Port, RELAY2_Pin, true);
       App_SendAck(command_id, "ok");
     } else if (strcmp(command, "OFF") == 0) {
+      relay2_manual_override = true;
+      relay2_manual_state = GPIO_PIN_RESET;
       App_ApplyRelayState(RELAY2_GPIO_Port, RELAY2_Pin, false);
+      App_SendAck(command_id, "ok");
+    } else if (strcmp(command, "AUTO") == 0) {
+      relay2_manual_override = false;
+      App_SendAck(command_id, "ok");
+    } else {
+      App_SendAck(command_id, "unsupported");
+    }
+  } else if ((strcmp(target, "fill_light") == 0) || (strcmp(target, "light") == 0) || (strcmp(target, "led") == 0)) {
+    if (strcmp(command, "ON") == 0) {
+      fill_light_manual_override = true;
+      fill_light_manual_state = GPIO_PIN_SET;
+      App_ApplyFillLightState(true);
+      App_SendAck(command_id, "ok");
+    } else if (strcmp(command, "OFF") == 0) {
+      fill_light_manual_override = true;
+      fill_light_manual_state = GPIO_PIN_RESET;
+      App_ApplyFillLightState(false);
+      App_SendAck(command_id, "ok");
+    } else if (strcmp(command, "AUTO") == 0) {
+      fill_light_manual_override = false;
       App_SendAck(command_id, "ok");
     } else {
       App_SendAck(command_id, "unsupported");
@@ -1113,6 +1405,14 @@ int main(void)
 
           App_ApplyRelayState(RELAY1_GPIO_Port, RELAY1_Pin, relay1_auto_on);
         }
+
+        if (relay2_manual_override) {
+          HAL_GPIO_WritePin(RELAY2_GPIO_Port, RELAY2_Pin, relay2_manual_state);
+        }
+
+        if (fill_light_manual_override) {
+          App_ApplyFillLightState(fill_light_manual_state == GPIO_PIN_SET);
+        }
       }
 
       App_UpdateDisplay(temperature, humidity, has_valid_sensor_data);
@@ -1152,8 +1452,11 @@ int main(void)
       App_SendTelemetry(temperature, humidity, sensor_ok);
     }
 
-    if (nb_downlink_poll_enabled && ((HAL_GetTick() - last_downlink_poll_tick) >= APP_NB_DOWNLINK_POLL_INTERVAL_MS)) {
+    if (nb_downlink_poll_enabled &&
+        (nb_pending_immediate_downlink_poll ||
+         ((HAL_GetTick() - last_downlink_poll_tick) >= APP_NB_DOWNLINK_POLL_INTERVAL_MS))) {
       last_downlink_poll_tick = HAL_GetTick();
+      nb_pending_immediate_downlink_poll = false;
       App_NbPollDownlink();
     }
 
