@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -10,19 +9,15 @@ from sqlalchemy.orm import Session
 from app.core.database import get_redis_client
 from app.models import Device, EnvironmentData, RoleEnum, User
 from app.schemas import EnvironmentDataCreate
+from app.utils import get_display_time, to_display_iso
 
 
 class TelemetryService:
     AUTO_OWNER_USERNAME = "auto_device_owner"
-    DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
     @staticmethod
     def _to_display_iso(value: datetime | None) -> str | None:
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
-        return value.astimezone(TelemetryService.DISPLAY_TIMEZONE).isoformat()
+        return to_display_iso(value)
 
     @staticmethod
     def _get_or_create_auto_owner(db: Session) -> User:

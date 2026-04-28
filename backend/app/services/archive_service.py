@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import AnimalProfile, AnimalProfileHistory, LivestockArchive
+from app.utils import to_display_iso
 
 
 class ArchiveService:
@@ -29,8 +30,8 @@ class ArchiveService:
             "species": animal.species,
             "breed": animal.breed,
             "gender": animal.gender,
-            "birth_date": animal.birth_date.isoformat() if animal.birth_date else None,
-            "check_in_date": animal.check_in_date.isoformat() if animal.check_in_date else None,
+            "birth_date": to_display_iso(animal.birth_date),
+            "check_in_date": to_display_iso(animal.check_in_date),
             "weight": animal.weight,
             "health_status": animal.health_status,
             "ear_tag": animal.ear_tag,
@@ -38,14 +39,14 @@ class ArchiveService:
             "immunization_note": animal.immunization_note,
             "notes": animal.notes,
             "is_active": animal.is_active,
-            "updated_at": animal.updated_at.isoformat() if animal.updated_at else None,
+            "updated_at": to_display_iso(animal.updated_at),
             "history_records": [
                 {
                     "id": record.id,
                     "field_name": record.field_name,
                     "old_value": record.old_value,
                     "new_value": record.new_value,
-                    "changed_at": record.changed_at.isoformat() if record.changed_at else None,
+                    "changed_at": to_display_iso(record.changed_at),
                 }
                 for record in animal.history_records
             ],
@@ -58,16 +59,16 @@ class ArchiveService:
             "batch_number": item.batch_number,
             "species": item.species,
             "quantity": item.quantity,
-            "check_in_date": item.check_in_date.isoformat() if item.check_in_date else None,
-            "expected_checkout_date": item.expected_checkout_date.isoformat() if item.expected_checkout_date else None,
+            "check_in_date": to_display_iso(item.check_in_date),
+            "expected_checkout_date": to_display_iso(item.expected_checkout_date),
             "immunization_records": ArchiveService._parse_immunization_records(item.immunization_records),
             "notes": item.notes,
             "average_weight": item.average_weight,
             "feed_consumption": item.feed_consumption,
             "health_status": item.health_status,
             "is_active": item.is_active,
-            "created_at": item.created_at.isoformat() if item.created_at else None,
-            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+            "created_at": to_display_iso(item.created_at),
+            "updated_at": to_display_iso(item.updated_at),
             "animals": [ArchiveService._serialize_animal(animal) for animal in item.animal_profiles],
         }
 

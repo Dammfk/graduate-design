@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.models import AlarmInfo
 from app.schemas import AlarmInfoUpdate
 from app.services import AlarmService
+from app.utils import to_display_iso
 
 router = APIRouter(prefix="/api/v1/alarms", tags=["alarms"])
 
@@ -18,9 +19,9 @@ def _serialize_alarm(alarm: AlarmInfo) -> dict:
         "threshold_value": alarm.threshold_value,
         "actual_value": alarm.actual_value,
         "description": alarm.description,
-        "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
+        "alarm_time": to_display_iso(alarm.alarm_time),
         "status": alarm.status,
-        "resolved_time": alarm.resolved_time.isoformat() if alarm.resolved_time else None,
+        "resolved_time": to_display_iso(alarm.resolved_time),
         "user_id": alarm.user_id,
     }
 
@@ -125,7 +126,7 @@ async def resolve_alarm(
             "data": {
                 "id": alarm.id,
                 "status": alarm.status,
-                "resolved_time": alarm.resolved_time.isoformat() if alarm.resolved_time else None,
+                "resolved_time": to_display_iso(alarm.resolved_time),
             },
         }
     except HTTPException:

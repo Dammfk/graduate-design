@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models import OperationLog, RoleEnum, User
+from app.utils import to_display_iso
 
 
 class SystemService:
@@ -24,8 +25,8 @@ class SystemService:
             "email": user.email,
             "role": role_value,
             "is_active": user.is_active,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            "created_at": to_display_iso(user.created_at),
+            "updated_at": to_display_iso(user.updated_at),
             "permissions": SystemService.ROLE_PERMISSIONS.get(role_value, []),
         }
 
@@ -40,7 +41,7 @@ class SystemService:
             "action": log.action,
             "target": log.target,
             "detail": log.detail,
-            "created_at": log.created_at.isoformat() if log.created_at else None,
+            "created_at": to_display_iso(log.created_at),
         }
 
     @staticmethod

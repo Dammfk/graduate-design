@@ -29,27 +29,77 @@ class AlarmService:
 
         if environment_data.temperature is not None:
             if environment_data.temperature > 30:
-                alarms.append(AlarmService._create_alarm(db, device, "temperature_high", environment_data.temperature))
+                alarms.append(
+                    AlarmService._create_or_refresh_alarm(
+                        db, device, "temperature_high", environment_data.temperature
+                    )
+                )
             elif environment_data.temperature < 5:
-                alarms.append(AlarmService._create_alarm(db, device, "temperature_low", environment_data.temperature))
+                alarms.append(
+                    AlarmService._create_or_refresh_alarm(
+                        db, device, "temperature_low", environment_data.temperature
+                    )
+                )
 
         if environment_data.humidity is not None:
             if environment_data.humidity > 90:
-                alarms.append(AlarmService._create_alarm(db, device, "humidity_high", environment_data.humidity))
+                alarms.append(
+                    AlarmService._create_or_refresh_alarm(
+                        db, device, "humidity_high", environment_data.humidity
+                    )
+                )
             elif environment_data.humidity < 20:
-                alarms.append(AlarmService._create_alarm(db, device, "humidity_low", environment_data.humidity))
+                alarms.append(
+                    AlarmService._create_or_refresh_alarm(
+                        db, device, "humidity_low", environment_data.humidity
+                    )
+                )
 
         if environment_data.co2_concentration is not None and environment_data.co2_concentration > 2000:
-            alarms.append(AlarmService._create_alarm(db, device, "co2_high", environment_data.co2_concentration))
+            alarms.append(
+                AlarmService._create_or_refresh_alarm(
+                    db, device, "co2_high", environment_data.co2_concentration
+                )
+            )
 
         if environment_data.ammonia_concentration is not None and environment_data.ammonia_concentration > 20:
-            alarms.append(AlarmService._create_alarm(db, device, "ammonia_high", environment_data.ammonia_concentration))
+            alarms.append(
+                AlarmService._create_or_refresh_alarm(
+                    db, device, "ammonia_high", environment_data.ammonia_concentration
+                )
+            )
 
         return alarms
 
     @staticmethod
-    def _create_alarm(db: Session, device: Device, alarm_type: str, actual_value: float) -> AlarmInfo:
+    def _create_or_refresh_alarm(
+        db: Session,
+        device: Device,
+        alarm_type: str,
+        actual_value: float,
+    ) -> AlarmInfo:
         config = AlarmService.ALARM_CONFIG.get(alarm_type, {})
+        existing_alarm = (
+            db.query(AlarmInfo)
+            .filter(
+                AlarmInfo.device_id == device.id,
+                AlarmInfo.alarm_type == alarm_type,
+                AlarmInfo.status.in_(["pending", "acknowledged"]),
+            )
+            .order_by(desc(AlarmInfo.alarm_time))
+            .first()
+        )
+
+        if existing_alarm:
+            existing_alarm.alarm_level = config.get("level", existing_alarm.alarm_level)
+            existing_alarm.threshold_value = config.get("threshold", existing_alarm.threshold_value)
+            existing_alarm.actual_value = actual_value
+            existing_alarm.description = f"{config.get('label', alarm_type)}，实际值 {actual_value}"
+            existing_alarm.alarm_time = datetime.utcnow()
+            db.commit()
+            db.refresh(existing_alarm)
+            return existing_alarm
+
         alarm = AlarmInfo(
             device_id=device.id,
             alarm_type=alarm_type,
@@ -127,13 +177,15 @@ class AlarmService:
         for archive in active_archives:
             risk_level = "medium" if archive.health_status in {"observe"} else "low"
             if archive.health_status in {"observe"}:
-                archive_risks.append({
-                    "batch_number": archive.batch_number,
-                    "species": archive.species,
-                    "health_status": archive.health_status,
-                    "risk_level": risk_level,
-                    "reason": archive.notes or "健康状态需持续观察",
-                })
+                archive_risks.append(
+                    {
+                        "batch_number": archive.batch_number,
+                        "species": archive.species,
+                        "health_status": archive.health_status,
+                        "risk_level": risk_level,
+                        "reason": archive.notes or "健康状态需持续观察",
+                    }
+                )
 
         history = (
             db.query(
@@ -157,8 +209,5 @@ class AlarmService:
             "type_distribution": type_counts,
             "zone_distribution": zone_counts,
             "archive_risks": archive_risks,
-            "history": [
-                {"date": str(row.day), "count": row.count}
-                for row in history
-            ],
+            "history": [{"date": str(row.day), "count": row.count} for row in history],
         }

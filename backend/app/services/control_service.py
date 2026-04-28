@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models import AutomationRule, ControlCommandLog, Device, EnvironmentData
+from app.utils import to_display_iso
 from .ctwing_command_service import CTWingCommandService
 
 
@@ -159,7 +160,7 @@ class ControlService:
             "humidity": environment_data.humidity,
             "co2_concentration": environment_data.co2_concentration,
             "ammonia_concentration": environment_data.ammonia_concentration,
-            "recorded_at": environment_data.recorded_at.isoformat() if environment_data.recorded_at else None,
+            "recorded_at": to_display_iso(environment_data.recorded_at),
         }
 
     @staticmethod
@@ -279,7 +280,7 @@ class ControlService:
                     "execution_mode": log.execution_mode,
                     "status": log.status,
                     "reason": log.reason,
-                    "executed_at": log.executed_at.isoformat() if log.executed_at else None,
+                    "executed_at": to_display_iso(log.executed_at),
                 }
                 for log in recent_logs
             ],
@@ -351,7 +352,7 @@ class ControlService:
             "execution_mode": log.execution_mode,
             "status": log.status,
             "reason": log.reason,
-            "executed_at": log.executed_at.isoformat(),
+            "executed_at": to_display_iso(log.executed_at),
             "ctwing_result": dispatch_result,
             "ctwing_command_id": (
                 dispatch_result.get("result", {}).get("commandId")
@@ -407,7 +408,7 @@ class ControlService:
                 "execution_mode": log.execution_mode,
                 "reason": log.reason,
                 "payload": json.loads(log.payload) if log.payload else None,
-                "executed_at": log.executed_at.isoformat() if log.executed_at else None,
+                "executed_at": to_display_iso(log.executed_at),
             }
             for log in logs
         ]

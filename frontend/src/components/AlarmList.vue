@@ -13,6 +13,10 @@
     </div>
 
     <template v-else>
+      <div v-if="actionMessage" class="action-banner" :class="actionMessage.type">
+        {{ actionMessage.text }}
+      </div>
+
       <div class="alarm-items">
         <article
           v-for="alarm in pagedAlarms"
@@ -37,11 +41,21 @@
           </div>
 
           <div class="alarm-actions">
-            <button v-if="alarm.status === 'pending'" class="ghost-btn" @click="$emit('acknowledge', alarm.id)">
-              确认
+            <button
+              v-if="alarm.status === 'pending'"
+              class="ghost-btn"
+              :disabled="isBusy(alarm.id)"
+              @click="$emit('acknowledge', alarm.id)"
+            >
+              {{ busyAction === 'acknowledge' && busyAlarmId === alarm.id ? '确认中...' : '确认' }}
             </button>
-            <button v-if="alarm.status !== 'resolved'" class="primary-btn" @click="$emit('resolve', alarm.id)">
-              解决
+            <button
+              v-if="alarm.status !== 'resolved'"
+              class="primary-btn"
+              :disabled="isBusy(alarm.id)"
+              @click="$emit('resolve', alarm.id)"
+            >
+              {{ busyAction === 'resolve' && busyAlarmId === alarm.id ? '处理中...' : '解决' }}
             </button>
             <span v-else class="resolved-badge">已解决</span>
           </div>
@@ -62,7 +76,10 @@ import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   alarms: { type: Array, default: () => [] },
-  ammoniaAlert: { type: Boolean, default: false }
+  ammoniaAlert: { type: Boolean, default: false },
+  busyAlarmId: { type: Number, default: null },
+  busyAction: { type: String, default: '' },
+  actionMessage: { type: Object, default: null }
 })
 
 defineEmits(['acknowledge', 'resolve'])
@@ -127,6 +144,10 @@ function formatNumber(value) {
   if (value === null || value === undefined) return '--'
   return Number(value).toFixed(1)
 }
+
+function isBusy(alarmId) {
+  return props.busyAlarmId === alarmId
+}
 </script>
 
 <style scoped lang="scss">
@@ -136,6 +157,9 @@ function formatNumber(value) {
 h2{margin:0;color:#f3f7fa;font-size:22px}
 .alarm-count{min-width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,107,107,.18);color:#ffd7d7;font-weight:700}
 .empty-state{flex:1;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(13,42,49,.76);color:#94aab1}
+.action-banner{padding:10px 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);font-size:13px}
+.action-banner.success{background:rgba(58,122,104,.18);color:#c8f0e2;border-color:rgba(108,210,178,.28)}
+.action-banner.error{background:rgba(108,39,39,.24);color:#ffd5d0;border-color:rgba(255,133,127,.26)}
 .alarm-items{display:grid;gap:10px}
 .alarm-item{padding:14px;border-radius:16px;border:1px solid rgba(164,215,210,.16);background:rgba(10,33,39,.9)}
 .alarm-item.level-critical{border-color:rgba(255,107,107,.4)}
@@ -154,6 +178,7 @@ h2{margin:0;color:#f3f7fa;font-size:22px}
 .ghost-btn,.primary-btn{height:36px;padding:0 14px;border-radius:10px;cursor:pointer;font-weight:600;transition:.2s ease}
 .ghost-btn{border:1px solid rgba(164,215,210,.22);background:transparent;color:#d7e8eb}
 .primary-btn{border:none;background:linear-gradient(135deg,#4fa98f,#2f7f6d);color:#fff}
+.ghost-btn:disabled,.primary-btn:disabled{opacity:.6;cursor:not-allowed}
 .resolved-badge{color:#9cd8be;font-weight:600}
 .pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(8,27,32,.72);color:#98b0b5}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 rgba(255,107,107,0)}50%{box-shadow:0 0 0 6px rgba(255,107,107,.08)}}

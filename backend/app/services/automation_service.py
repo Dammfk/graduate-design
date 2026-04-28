@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Dict, Optional
 from enum import Enum
+from app.utils import get_display_now, to_display_iso
 
 
 class ControlAction(str, Enum):
@@ -164,7 +165,7 @@ class SmartController:
                         "action": action,
                         "rule": rule.name,
                         "priority": rule.priority,
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": to_display_iso(datetime.utcnow())
                     })
                 
                 # 记录日志
@@ -206,7 +207,7 @@ class SmartController:
             })
         
         # 时间段优化
-        current_hour = datetime.utcnow().hour
+        current_hour = get_display_now().hour
         if 0 <= current_hour < 6 or 22 <= current_hour <= 23:
             # 夜间时段，通常更冷
             if environment_data.get("temperature", 0) < 20:
@@ -246,7 +247,7 @@ class SmartController:
     def export_energy_report(self) -> Dict:
         """导出能耗报告"""
         return {
-            "report_time": datetime.utcnow().isoformat(),
+            "report_time": to_display_iso(datetime.utcnow()),
             "fan_runtime_hours": self.energy_stats["fan_runtime"] / 3600,
             "total_energy_consumption_kwh": self.energy_stats["total_energy_consumption"] / 1000000,
             "co2_equivalent": self._calculate_co2_equivalent()
@@ -286,7 +287,7 @@ def process_environment_data(environment_data: Dict) -> Dict:
     return {
         "actions": actions,
         "energy_optimization": energy_opt,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": to_display_iso(datetime.utcnow())
     }
 
 

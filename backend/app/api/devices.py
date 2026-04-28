@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models import Device, User
 from app.schemas import DeviceCreate, DeviceUpdate, DeviceResponse
+from app.utils import to_display_iso
 
 router = APIRouter(prefix="/api/v1/devices", tags=["devices"])
 
@@ -110,8 +111,8 @@ async def list_devices(
                     "location": d.location,
                     "owner_id": d.owner_id,
                     "is_active": d.is_active,
-                    "latest_data_timestamp": d.latest_data_timestamp.isoformat() if d.latest_data_timestamp else None,
-                    "created_at": d.created_at.isoformat()
+                    "latest_data_timestamp": to_display_iso(d.latest_data_timestamp),
+                    "created_at": to_display_iso(d.created_at)
                 }
                 for d in devices
             ]

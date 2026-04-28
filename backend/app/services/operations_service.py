@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models import DailyTask, Device, EquipmentAsset, InventoryItem, LivestockArchive, ProductionTask, User
+from app.utils import get_display_now, to_display_iso
 
 
 class OperationsService:
@@ -23,11 +24,11 @@ class OperationsService:
             "archive_batch_number": archive.batch_number if archive else None,
             "assignee_user_id": task.assignee_user_id,
             "assignee_name": assignee.username if assignee else None,
-            "due_at": task.due_at.isoformat() if task.due_at else None,
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "due_at": to_display_iso(task.due_at),
+            "completed_at": to_display_iso(task.completed_at),
             "description": task.description,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "created_at": to_display_iso(task.created_at),
+            "updated_at": to_display_iso(task.updated_at),
         }
 
     @staticmethod
@@ -47,9 +48,9 @@ class OperationsService:
             "assignee_name": assignee.username if assignee else None,
             "description": task.description,
             "is_active": task.is_active,
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "completed_at": to_display_iso(task.completed_at),
+            "created_at": to_display_iso(task.created_at),
+            "updated_at": to_display_iso(task.updated_at),
         }
 
     @staticmethod
@@ -70,10 +71,10 @@ class OperationsService:
             "assignee_user_id": task.assignee_user_id,
             "assignee_name": assignee.username if assignee else None,
             "due_at": None,
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "completed_at": to_display_iso(task.completed_at),
             "description": task.description,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "created_at": to_display_iso(task.created_at),
+            "updated_at": to_display_iso(task.updated_at),
             "is_template": True,
             "is_active": task.is_active,
         }
@@ -91,7 +92,7 @@ class OperationsService:
             "location": item.location,
             "supplier": item.supplier,
             "is_low_stock": shortage,
-            "last_restocked_at": item.last_restocked_at.isoformat() if item.last_restocked_at else None,
+            "last_restocked_at": to_display_iso(item.last_restocked_at),
             "notes": item.notes,
         }
 
@@ -105,9 +106,9 @@ class OperationsService:
             "zone_name": asset.zone_name,
             "linked_device_id": asset.linked_device_id,
             "status": asset.status,
-            "installed_at": asset.installed_at.isoformat() if asset.installed_at else None,
-            "last_maintenance_at": asset.last_maintenance_at.isoformat() if asset.last_maintenance_at else None,
-            "next_maintenance_at": asset.next_maintenance_at.isoformat() if asset.next_maintenance_at else None,
+            "installed_at": to_display_iso(asset.installed_at),
+            "last_maintenance_at": to_display_iso(asset.last_maintenance_at),
+            "next_maintenance_at": to_display_iso(asset.next_maintenance_at),
             "notes": asset.notes,
         }
 
