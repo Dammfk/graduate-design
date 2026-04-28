@@ -144,6 +144,19 @@ class AlarmInfo(Base):
     user = relationship("User", back_populates="alarm_logs")
 
 
+class AlarmSetting(Base):
+    __tablename__ = "alarm_settings"
+
+    id = Column(Integer, primary_key=True)
+    alarm_type = Column(String(50), unique=True, nullable=False, index=True)
+    alarm_label = Column(String(100), nullable=False)
+    alarm_level = Column(String(20), nullable=False, default="warning")
+    threshold_value = Column(Float, nullable=False)
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ControlCommandLog(Base):
     __tablename__ = "control_command_logs"
 

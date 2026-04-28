@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
-from app.models import AlarmInfo, Device, LivestockArchive
+from app.models import AlarmInfo, AlarmSetting, Device, LivestockArchive
 
 
 class AlarmService:
@@ -21,20 +21,77 @@ class AlarmService:
     }
 
     @staticmethod
+    def ensure_alarm_settings(db: Session) -> None:
+        existing = {
+            item.alarm_type: item
+            for item in db.query(AlarmSetting).all()
+        }
+        created = False
+        for alarm_type, config in AlarmService.ALARM_CONFIG.items():
+            if alarm_type in existing:
+                continue
+            db.add(
+                AlarmSetting(
+                    alarm_type=alarm_type,
+                    alarm_label=config["label"],
+                    alarm_level=config["level"],
+                    threshold_value=config["threshold"],
+                    is_enabled=True,
+                )
+            )
+            created = True
+        if created:
+            db.commit()
+
+    @staticmethod
+    def get_alarm_settings(db: Session) -> list[AlarmSetting]:
+        AlarmService.ensure_alarm_settings(db)
+        return db.query(AlarmSetting).order_by(AlarmSetting.id.asc()).all()
+
+    @staticmethod
+    def update_alarm_setting(
+        db: Session,
+        alarm_type: str,
+        *,
+        is_enabled: bool | None = None,
+        threshold_value: float | None = None,
+    ) -> AlarmSetting:
+        AlarmService.ensure_alarm_settings(db)
+        setting = db.query(AlarmSetting).filter(AlarmSetting.alarm_type == alarm_type).first()
+        if setting is None:
+            raise ValueError(f"Alarm setting not found: {alarm_type}")
+        if is_enabled is not None:
+            setting.is_enabled = is_enabled
+        if threshold_value is not None:
+            setting.threshold_value = threshold_value
+        db.commit()
+        db.refresh(setting)
+        return setting
+
+    @staticmethod
+    def _setting_map(db: Session) -> dict[str, AlarmSetting]:
+        AlarmService.ensure_alarm_settings(db)
+        return {item.alarm_type: item for item in db.query(AlarmSetting).all()}
+
+    @staticmethod
     async def check_and_create_alarms(db: Session, environment_data) -> list[AlarmInfo]:
         alarms = []
         device = db.query(Device).filter(Device.id == environment_data.device_id).first()
         if not device:
             return alarms
 
+        settings_map = AlarmService._setting_map(db)
+
         if environment_data.temperature is not None:
-            if environment_data.temperature > 30:
+            high_setting = settings_map.get("temperature_high")
+            low_setting = settings_map.get("temperature_low")
+            if high_setting and high_setting.is_enabled and environment_data.temperature > high_setting.threshold_value:
                 alarms.append(
                     AlarmService._create_or_refresh_alarm(
                         db, device, "temperature_high", environment_data.temperature
                     )
                 )
-            elif environment_data.temperature < 5:
+            elif low_setting and low_setting.is_enabled and environment_data.temperature < low_setting.threshold_value:
                 alarms.append(
                     AlarmService._create_or_refresh_alarm(
                         db, device, "temperature_low", environment_data.temperature
@@ -42,27 +99,41 @@ class AlarmService:
                 )
 
         if environment_data.humidity is not None:
-            if environment_data.humidity > 90:
+            high_setting = settings_map.get("humidity_high")
+            low_setting = settings_map.get("humidity_low")
+            if high_setting and high_setting.is_enabled and environment_data.humidity > high_setting.threshold_value:
                 alarms.append(
                     AlarmService._create_or_refresh_alarm(
                         db, device, "humidity_high", environment_data.humidity
                     )
                 )
-            elif environment_data.humidity < 20:
+            elif low_setting and low_setting.is_enabled and environment_data.humidity < low_setting.threshold_value:
                 alarms.append(
                     AlarmService._create_or_refresh_alarm(
                         db, device, "humidity_low", environment_data.humidity
                     )
                 )
 
-        if environment_data.co2_concentration is not None and environment_data.co2_concentration > 2000:
+        co2_setting = settings_map.get("co2_high")
+        if (
+            co2_setting
+            and co2_setting.is_enabled
+            and environment_data.co2_concentration is not None
+            and environment_data.co2_concentration > co2_setting.threshold_value
+        ):
             alarms.append(
                 AlarmService._create_or_refresh_alarm(
                     db, device, "co2_high", environment_data.co2_concentration
                 )
             )
 
-        if environment_data.ammonia_concentration is not None and environment_data.ammonia_concentration > 20:
+        ammonia_setting = settings_map.get("ammonia_high")
+        if (
+            ammonia_setting
+            and ammonia_setting.is_enabled
+            and environment_data.ammonia_concentration is not None
+            and environment_data.ammonia_concentration > ammonia_setting.threshold_value
+        ):
             alarms.append(
                 AlarmService._create_or_refresh_alarm(
                     db, device, "ammonia_high", environment_data.ammonia_concentration
@@ -78,6 +149,8 @@ class AlarmService:
         alarm_type: str,
         actual_value: float,
     ) -> AlarmInfo:
+        AlarmService.ensure_alarm_settings(db)
+        setting = db.query(AlarmSetting).filter(AlarmSetting.alarm_type == alarm_type).first()
         config = AlarmService.ALARM_CONFIG.get(alarm_type, {})
         existing_alarm = (
             db.query(AlarmInfo)
@@ -91,11 +164,15 @@ class AlarmService:
         )
 
         if existing_alarm:
-            existing_alarm.alarm_level = config.get("level", existing_alarm.alarm_level)
-            existing_alarm.threshold_value = config.get("threshold", existing_alarm.threshold_value)
+            existing_alarm.alarm_level = setting.alarm_level if setting else config.get("level", existing_alarm.alarm_level)
+            existing_alarm.threshold_value = setting.threshold_value if setting else config.get("threshold", existing_alarm.threshold_value)
             existing_alarm.actual_value = actual_value
-            existing_alarm.description = f"{config.get('label', alarm_type)}，实际值 {actual_value}"
+            existing_alarm.description = f"{(setting.alarm_label if setting else config.get('label', alarm_type))}，实际值 {actual_value}"
             existing_alarm.alarm_time = datetime.utcnow()
+            if existing_alarm.status == "acknowledged":
+                # 风险持续存在时，重新进入待处理，避免摘要有预警但待处理列表为空。
+                existing_alarm.status = "pending"
+                existing_alarm.user_id = None
             db.commit()
             db.refresh(existing_alarm)
             return existing_alarm
@@ -103,10 +180,10 @@ class AlarmService:
         alarm = AlarmInfo(
             device_id=device.id,
             alarm_type=alarm_type,
-            alarm_level=config.get("level", "info"),
-            threshold_value=config.get("threshold", 0),
+            alarm_level=setting.alarm_level if setting else config.get("level", "info"),
+            threshold_value=setting.threshold_value if setting else config.get("threshold", 0),
             actual_value=actual_value,
-            description=f"{config.get('label', alarm_type)}，实际值 {actual_value}",
+            description=f"{(setting.alarm_label if setting else config.get('label', alarm_type))}，实际值 {actual_value}",
             status="pending",
         )
         db.add(alarm)

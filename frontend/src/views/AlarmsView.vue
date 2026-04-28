@@ -7,6 +7,11 @@
         :zone-distribution="monitoringStore.riskDashboard.zone_distribution"
         :archive-risks="monitoringStore.riskDashboard.archive_risks"
       />
+      <AlarmSettings
+        :settings="monitoringStore.alarmSettings"
+        :busy-key="busySettingKey"
+        @update-setting="handleUpdateSetting"
+      />
     </section>
 
     <section class="page-panel">
@@ -26,6 +31,7 @@
 <script setup>
 import { ref } from 'vue'
 import AlarmList from '../components/AlarmList.vue'
+import AlarmSettings from '../components/AlarmSettings.vue'
 import RiskDashboard from '../components/RiskDashboard.vue'
 import { useMonitoringStore } from '../stores/monitoring'
 
@@ -33,6 +39,7 @@ const monitoringStore = useMonitoringStore()
 const busyAlarmId = ref(null)
 const busyAction = ref('')
 const actionMessage = ref(null)
+const busySettingKey = ref('')
 let messageTimer = null
 
 function showMessage(type, text) {
@@ -70,6 +77,18 @@ async function handleResolve(alarmId) {
   } finally {
     busyAlarmId.value = null
     busyAction.value = ''
+  }
+}
+
+async function handleUpdateSetting(alarmType, payload) {
+  busySettingKey.value = alarmType
+  try {
+    await monitoringStore.updateAlarmSetting(alarmType, payload)
+    showMessage('success', `预警设置 ${alarmType} 已更新`)
+  } catch (error) {
+    showMessage('error', error?.response?.data?.detail || error?.message || '预警设置更新失败')
+  } finally {
+    busySettingKey.value = ''
   }
 }
 </script>

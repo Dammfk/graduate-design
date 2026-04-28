@@ -87,6 +87,8 @@ static bool app_main_screen_active = false;
 static bool nb_last_attached = false;
 static bool nb_last_registered = false;
 static bool nb_last_mo_ready = false;
+static uint8_t nb_ready_stage = 0U;
+static uint8_t nb_downlink_no_response_count = 0U;
 static uint32_t nb_last_attach_retry_tick = 0U;
 static bool nb_boot_success_pending = false;
 static uint32_t nb_boot_success_tick = 0U;
@@ -108,6 +110,7 @@ static bool SHT3X_ReadMeasurement(float *temperature, float *humidity);
 static bool SHT3X_CheckCrc(const uint8_t *data, uint8_t crc);
 static void App_ShowLine(uint8_t x, uint8_t page, const char *text);
 static void App_ShowBootStatus(const char *title, const char *detail);
+static const char *App_NbReadyStageText(void);
 static void App_DrawMainScreen(void);
 static void App_UpdateStatusLine(void);
 static void App_UpdateDisplay(float temperature, float humidity, bool sensor_ok);
@@ -146,6 +149,7 @@ static void App_SendAck(long command_id, const char *status);
 static bool App_ExtractJsonString(const char *json, const char *key, char *value, size_t value_size);
 static bool App_ExtractJsonLong(const char *json, const char *key, long *value);
 static void App_HandleCommandLine(const char *line);
+static void App_NbRecoverDownlinkSession(void);
 
 /* USER CODE END PFP */
 
@@ -448,6 +452,22 @@ static void App_ApplyRelayState(GPIO_TypeDef *port, uint16_t pin, bool is_on)
   HAL_GPIO_WritePin(port, pin, is_on ? RELAY_ACTIVE_STATE : GPIO_PIN_RESET);
 }
 
+static const char *App_NbReadyStageText(void)
+{
+  switch (nb_ready_stage) {
+    case 0U:
+      return "STATUS: ATTACH";
+    case 1U:
+      return "STATUS: REGISTER";
+    case 2U:
+      return "STATUS: SESSION";
+    case 3U:
+      return "STATUS: SUCCESS";
+    default:
+      return "STATUS: ATTACH";
+  }
+}
+
 static void App_ApplyFillLightState(bool is_on)
 {
   GPIO_PinState led_state = is_on ? GPIO_PIN_RESET : GPIO_PIN_SET;
@@ -488,6 +508,7 @@ static void App_NbInit(void)
   nb_last_attached = false;
   nb_last_registered = false;
   nb_last_mo_ready = false;
+  nb_ready_stage = 0U;
   nb_boot_success_pending = false;
   nb_boot_success_tick = 0U;
   App_ShowBootStatus("STATUS: START", "POWER ON +2S");
@@ -501,6 +522,8 @@ static void App_NbInit(void)
   (void)App_NbSendCommand("AT+CFUN=1\r\n", 5000U);
   HAL_Delay(3000U);
   App_ShowBootStatus("STATUS: ATTACH", "WAIT NETWORK");
+  (void)App_NbSendCommand("AT+CEDRXS=0,5\r\n", 1500U);
+  (void)App_NbSendCommand("AT+CPSMS=0\r\n", 1500U);
   snprintf(command, sizeof(command), "AT+CGDCONT=1,\"IP\",\"%s\"\r\n", APP_NB_APN);
   (void)App_NbSendCommand(command, 1500U);
   (void)App_NbSendCommand("AT+CGATT=1\r\n", 1500U);
@@ -644,6 +667,7 @@ static bool App_NbQueryNetworkReady(bool trace)
   if (!attached) {
     registered = false;
     mo_ready = false;
+    nb_ready_stage = 0U;
   } else if (APP_NB_UART_SendText("AT+CEREG?\r\n") == HAL_OK) {
     if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
       registered = (strstr(response, "+CEREG:0,1") != NULL) || (strstr(response, "+CEREG:1,1") != NULL);
@@ -652,10 +676,17 @@ static bool App_NbQueryNetworkReady(bool trace)
 
   if (!registered) {
     mo_ready = false;
+    nb_ready_stage = 1U;
   } else if (APP_NB_UART_SendText("AT+NMSTATUS?\r\n") == HAL_OK) {
     if (App_NbReadResponse(response, sizeof(response), 1500U) > 0U) {
       mo_ready = (strstr(response, "MO_DATA_ENABLED") != NULL);
     }
+  }
+
+  if (attached && registered && !mo_ready) {
+    nb_ready_stage = 2U;
+  } else if (attached && registered && mo_ready) {
+    nb_ready_stage = 3U;
   }
 
   nb_last_attached = attached;
@@ -948,6 +979,8 @@ static void App_NbPollDownlink(void)
 #if APP_NB_TELEMETRY_ENABLED
   char response[256];
   char queue_status[128];
+  bool nmgr_ok = false;
+  bool nqmgr_ok = false;
 
   if (!nb_network_ready) {
     APP_UART_SendText("[NB POLL] WAIT READY\r\n");
@@ -959,9 +992,16 @@ static void App_NbPollDownlink(void)
   if (APP_NB_UART_SendText("AT+NMGR\r\n") != HAL_OK) {
     APP_UART_SendText("[NB POLL] SEND FAIL\r\n");
     App_NbSetReady(false);
+    if (nb_downlink_no_response_count < 255U) {
+      ++nb_downlink_no_response_count;
+    }
+    if (nb_downlink_no_response_count >= 3U) {
+      App_NbRecoverDownlinkSession();
+    }
     return;
   }
   if (App_NbReadResponse(response, sizeof(response), APP_NB_DOWNLINK_READ_MS) > 0U) {
+    nmgr_ok = true;
     App_NbHandleResponse(response);
   } else {
     APP_UART_SendText("[NB POLL] NO RESPONSE\r\n");
@@ -971,10 +1011,38 @@ static void App_NbPollDownlink(void)
   if (APP_NB_UART_SendText("AT+NQMGR\r\n") == HAL_OK) {
     if (App_NbReadResponse(queue_status, sizeof(queue_status), 800U) == 0U) {
       APP_UART_SendText("[NB POLL] NQMGR NO RESPONSE\r\n");
+    } else {
+      nqmgr_ok = true;
     }
   } else {
     APP_UART_SendText("[NB POLL] NQMGR SEND FAIL\r\n");
   }
+
+  if (nmgr_ok || nqmgr_ok) {
+    nb_downlink_no_response_count = 0U;
+  } else {
+    if (nb_downlink_no_response_count < 255U) {
+      ++nb_downlink_no_response_count;
+    }
+    if (nb_downlink_no_response_count >= 3U) {
+      App_NbRecoverDownlinkSession();
+    }
+  }
+#endif
+}
+
+static void App_NbRecoverDownlinkSession(void)
+{
+#if APP_NB_TELEMETRY_ENABLED
+  APP_UART_SendText("[NB POLL] RECOVER SESSION\r\n");
+  nb_downlink_no_response_count = 0U;
+  App_NbSetReady(false);
+  (void)App_NbSendCommand("AT+NNMI=2\r\n", 1500U);
+  if (!App_NbQueryNetworkReady(true)) {
+    APP_UART_SendText("[NB POLL] REINIT BC28\r\n");
+    App_NbInit();
+  }
+  nb_pending_immediate_downlink_poll = true;
 #endif
 }
 
@@ -1004,6 +1072,11 @@ static void App_NbHandleResponse(const char *response)
 
     while ((line[0] == ' ') || (line[0] == '\t')) {
       memmove(line, line + 1, strlen(line));
+    }
+
+    if ((strcmp(line, "+NNMI") == 0) || (strcmp(line, "+NNMI\r") == 0)) {
+      nb_pending_immediate_downlink_poll = true;
+      APP_UART_SendText("[NB POLL] NNMI TRIGGER\r\n");
     }
 
     if ((strncmp(line, "+NNMI:", 6U) == 0) || (strncmp(line, "+NMGR:", 6U) == 0)) {
@@ -1379,7 +1452,7 @@ int main(void)
            nb_last_attached ? 1 : 0,
            nb_last_registered ? 1 : 0,
            nb_last_mo_ready ? 1 : 0);
-  App_ShowBootStatus("STATUS: ATTACH", boot_detail);
+  App_ShowBootStatus(App_NbReadyStageText(), boot_detail);
   last_network_ready_check_tick = HAL_GetTick();
 
   /* USER CODE END 2 */
@@ -1436,7 +1509,7 @@ int main(void)
                  nb_last_attached ? 1 : 0,
                  nb_last_registered ? 1 : 0,
                  nb_last_mo_ready ? 1 : 0);
-        App_ShowBootStatus("STATUS: ATTACH", boot_detail);
+        App_ShowBootStatus(App_NbReadyStageText(), boot_detail);
       }
 
       if (nb_network_ready) {

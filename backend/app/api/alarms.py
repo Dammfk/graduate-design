@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models import AlarmInfo
+from app.models import AlarmInfo, AlarmSetting
 from app.schemas import AlarmInfoUpdate
 from app.services import AlarmService
 from app.utils import to_display_iso
@@ -23,6 +23,18 @@ def _serialize_alarm(alarm: AlarmInfo) -> dict:
         "status": alarm.status,
         "resolved_time": to_display_iso(alarm.resolved_time),
         "user_id": alarm.user_id,
+    }
+
+
+def _serialize_alarm_setting(setting: AlarmSetting) -> dict:
+    return {
+        "id": setting.id,
+        "alarm_type": setting.alarm_type,
+        "alarm_label": setting.alarm_label,
+        "alarm_level": setting.alarm_level,
+        "threshold_value": setting.threshold_value,
+        "is_enabled": setting.is_enabled,
+        "updated_at": to_display_iso(setting.updated_at),
     }
 
 
@@ -49,6 +61,52 @@ async def get_risk_dashboard(db: Session = Depends(get_db)) -> dict:
             "status": "success",
             "data": AlarmService.get_risk_dashboard(db),
         }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+
+@router.get("/settings")
+async def get_alarm_settings(db: Session = Depends(get_db)) -> dict:
+    try:
+        settings = AlarmService.get_alarm_settings(db)
+        return {
+            "status": "success",
+            "count": len(settings),
+            "data": [_serialize_alarm_setting(item) for item in settings],
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+
+@router.put("/settings/{alarm_type}")
+async def update_alarm_setting(
+    alarm_type: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        setting = AlarmService.update_alarm_setting(
+            db,
+            alarm_type,
+            is_enabled=payload.get("is_enabled"),
+            threshold_value=payload.get("threshold_value"),
+        )
+        return {
+            "status": "success",
+            "message": "Alarm setting updated",
+            "data": _serialize_alarm_setting(setting),
+        }
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

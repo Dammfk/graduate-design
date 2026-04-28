@@ -151,7 +151,7 @@ function isBusy(alarmId) {
 </script>
 
 <style scoped lang="scss">
-.alarm-list{display:flex;flex-direction:column;gap:14px;height:100%}
+.alarm-list{display:flex;flex-direction:column;gap:14px;height:100%;min-height:0}
 .list-header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
 .eyebrow{margin:0 0 6px;color:#87a5ac;font-size:12px;letter-spacing:.2em;text-transform:uppercase}
 h2{margin:0;color:#f3f7fa;font-size:22px}
@@ -160,7 +160,7 @@ h2{margin:0;color:#f3f7fa;font-size:22px}
 .action-banner{padding:10px 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);font-size:13px}
 .action-banner.success{background:rgba(58,122,104,.18);color:#c8f0e2;border-color:rgba(108,210,178,.28)}
 .action-banner.error{background:rgba(108,39,39,.24);color:#ffd5d0;border-color:rgba(255,133,127,.26)}
-.alarm-items{display:grid;gap:10px}
+.alarm-items{display:grid;gap:10px;flex:1;align-content:start}
 .alarm-item{padding:14px;border-radius:16px;border:1px solid rgba(164,215,210,.16);background:rgba(10,33,39,.9)}
 .alarm-item.level-critical{border-color:rgba(255,107,107,.4)}
 .alarm-item.level-warning{border-color:rgba(255,200,87,.35)}
@@ -180,6 +180,6 @@ h2{margin:0;color:#f3f7fa;font-size:22px}
 .primary-btn{border:none;background:linear-gradient(135deg,#4fa98f,#2f7f6d);color:#fff}
 .ghost-btn:disabled,.primary-btn:disabled{opacity:.6;cursor:not-allowed}
 .resolved-badge{color:#9cd8be;font-weight:600}
-.pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(8,27,32,.72);color:#98b0b5}
+.pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(8,27,32,.72);color:#98b0b5;margin-top:auto}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 rgba(255,107,107,0)}50%{box-shadow:0 0 0 6px rgba(255,107,107,.08)}}
 </style>

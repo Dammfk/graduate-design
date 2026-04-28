@@ -169,6 +169,7 @@ body,
   width: 100%;
   min-height: 100vh;
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 17px;
   background: var(--bg-app);
   color: var(--text-main);
 }
@@ -219,19 +220,28 @@ input {
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .brand h1,
 .topbar h2 {
   margin: 0;
+  line-height: 1.2;
+}
+
+.brand h1 {
+  font-size: 36px;
+}
+
+.topbar h2 {
+  font-size: 32px;
 }
 
 .brand-text {
   margin: 12px 0 0;
   color: var(--text-muted);
   line-height: 1.7;
-  font-size: 14px;
+  font-size: 17px;
 }
 
 .nav-list {
@@ -280,11 +290,13 @@ input {
 }
 
 .nav-copy strong {
-  font-size: 15px;
+  font-size: 18px;
 }
 
 .nav-copy small {
   color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .sidebar-foot {
@@ -298,8 +310,12 @@ input {
 .sidebar-foot span {
   display: block;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 15px;
   margin-bottom: 8px;
+}
+
+.sidebar-foot strong {
+  font-size: 19px;
 }
 
 .workspace {
@@ -331,8 +347,12 @@ input {
 .meta-chip span {
   display: block;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 6px;
+}
+
+.meta-chip strong {
+  font-size: 18px;
 }
 
 .status-banner {
@@ -340,6 +360,8 @@ input {
   padding: 14px 18px;
   border-radius: 18px;
   border: 1px solid var(--border-soft);
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .status-banner.error {
@@ -375,12 +397,14 @@ input {
 
 .section-heading h3 {
   margin: 0;
-  font-size: 24px;
+  font-size: 28px;
 }
 
 .section-heading p {
   margin: 0 0 6px;
   color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .toolbar-card {
@@ -402,18 +426,19 @@ input {
 }
 
 .toolbar-field label {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-muted);
 }
 
 .toolbar-field select,
 .toolbar-field input {
-  height: 42px;
+  height: 44px;
   padding: 0 14px;
   border-radius: 14px;
   border: 1px solid var(--border-strong);
   background: rgba(7, 26, 31, 0.94);
   color: var(--text-main);
+  font-size: 16px;
 }
 
 @media (max-width: 1180px) {

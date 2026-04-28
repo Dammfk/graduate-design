@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,8 @@ from .ctwing_command_service import CTWingCommandService
 
 class ControlService:
     """智能设备控制服务。"""
+
+    MANUAL_OVERRIDE_HOLD_MINUTES = 30
 
     MANAGED_COMPONENTS = [
         {
@@ -71,6 +73,39 @@ class ControlService:
         if status_text in {"指令发送超时", "失败", "发送失败"}:
             return "failed"
         return "pending"
+
+    @staticmethod
+    def _extract_ctwing_meta(payload: str | None) -> dict:
+        if not payload:
+            return {
+                "ctwing_command_id": None,
+                "ctwing_command_status": None,
+                "ctwing_result": None,
+            }
+
+        try:
+            payload_data = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            return {
+                "ctwing_command_id": None,
+                "ctwing_command_status": None,
+                "ctwing_result": None,
+            }
+
+        ctwing_result = payload_data.get("ctwing_result")
+        if not isinstance(ctwing_result, dict):
+            return {
+                "ctwing_command_id": None,
+                "ctwing_command_status": None,
+                "ctwing_result": None,
+            }
+
+        result = ctwing_result.get("result") or {}
+        return {
+            "ctwing_command_id": result.get("commandId"),
+            "ctwing_command_status": result.get("commandStatus"),
+            "ctwing_result": ctwing_result,
+        }
 
     @staticmethod
     def ensure_default_rules(db: Session) -> None:
@@ -164,6 +199,31 @@ class ControlService:
         }
 
     @staticmethod
+    def _has_active_manual_override(
+        db: Session,
+        device_id: int,
+        target_component: str,
+    ) -> bool:
+        latest_manual_log = (
+            db.query(ControlCommandLog)
+            .filter(
+                ControlCommandLog.device_id == device_id,
+                ControlCommandLog.target_component == target_component,
+                ControlCommandLog.execution_mode == "manual",
+                ControlCommandLog.status.in_(["pending", "sent", "success"]),
+            )
+            .order_by(ControlCommandLog.executed_at.desc(), ControlCommandLog.id.desc())
+            .first()
+        )
+        if latest_manual_log is None or latest_manual_log.executed_at is None:
+            return False
+
+        hold_deadline = latest_manual_log.executed_at + timedelta(
+            minutes=ControlService.MANUAL_OVERRIDE_HOLD_MINUTES
+        )
+        return hold_deadline > datetime.utcnow()
+
+    @staticmethod
     def _infer_component_status(device: Device, latest: EnvironmentData | None) -> dict[str, dict]:
         return {
             "fan": {
@@ -193,14 +253,18 @@ class ControlService:
             .order_by(ControlCommandLog.executed_at.desc(), ControlCommandLog.id.desc())
             .all()
         )
+        latest_success_log_by_component: dict[str, ControlCommandLog] = {}
         latest_log_by_component: dict[str, ControlCommandLog] = {}
         for log in latest_logs:
             if log.target_component not in latest_log_by_component:
                 latest_log_by_component[log.target_component] = log
+            if log.status == "success" and log.target_component not in latest_success_log_by_component:
+                latest_success_log_by_component[log.target_component] = log
 
         components = []
         for component_key in ["fan", "cooling_pad", "fill_light"]:
-            component_log = latest_log_by_component.get(component_key)
+            component_log = latest_success_log_by_component.get(component_key)
+            latest_command = latest_log_by_component.get(component_key)
             if component_log:
                 components.append(
                     {
@@ -209,6 +273,7 @@ class ControlService:
                         "status": component_log.command_type.upper(),
                         "mode": component_log.execution_mode,
                         "can_control": True,
+                        "last_command_status": latest_command.status if latest_command else component_log.status,
                     }
                 )
                 continue
@@ -220,6 +285,7 @@ class ControlService:
                     "status": inferred[component_key]["status"],
                     "mode": inferred[component_key]["mode"],
                     "can_control": True,
+                    "last_command_status": latest_command.status if latest_command else "idle",
                 }
             )
 
@@ -281,6 +347,7 @@ class ControlService:
                     "status": log.status,
                     "reason": log.reason,
                     "executed_at": to_display_iso(log.executed_at),
+                    **ControlService._extract_ctwing_meta(log.payload),
                 }
                 for log in recent_logs
             ],
@@ -454,6 +521,13 @@ class ControlService:
                 continue
 
             command_type = rule.action_command.upper()
+            if ControlService._has_active_manual_override(
+                db=db,
+                device_id=device.id,
+                target_component=rule.target_component,
+            ):
+                continue
+
             if ControlService._has_inflight_command(
                 db=db,
                 device_id=device.id,

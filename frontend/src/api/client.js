@@ -40,6 +40,14 @@ export const alarmAPI = {
     return api.get('/alarms/risk-dashboard')
   },
 
+  getSettings() {
+    return api.get('/alarms/settings')
+  },
+
+  updateSetting(alarmType, data) {
+    return api.put(`/alarms/settings/${alarmType}`, data)
+  },
+
   getDeviceAlarms(deviceId, limit = 20) {
     return api.get(`/alarms/device/${deviceId}`, {
       params: { limit }
@@ -89,7 +97,9 @@ export const controlAPI = {
   },
 
   executeCommand(deviceId, data) {
-    return api.post(`/control/devices/${deviceId}/commands`, data)
+    return api.post(`/control/devices/${deviceId}/commands`, data, {
+      timeout: 30000
+    })
   },
 
   updateRule(ruleId, data) {

@@ -12,7 +12,12 @@
     <section class="control-layout">
       <div class="page-grid">
         <section class="page-panel">
-          <ControlPanel :device="monitoringStore.currentControlDevice" @command="handleCommand" />
+          <ControlPanel
+            :device="monitoringStore.currentControlDevice"
+            :busy-map="monitoringStore.commandInFlightByComponent"
+            :last-feedback="monitoringStore.lastControlFeedback"
+            @command="handleCommand"
+          />
         </section>
         <section class="page-panel">
           <AutomationRules :rules="monitoringStore.controlDashboard.automation_rules" @toggle="monitoringStore.toggleAutomationRule" />
@@ -50,7 +55,11 @@ async function handleDeviceChange(deviceId) {
 }
 
 async function handleCommand(componentKey, commandType, reason) {
-  await monitoringStore.executeControlCommand(componentKey, commandType, reason)
+  try {
+    await monitoringStore.executeControlCommand(componentKey, commandType, reason)
+  } catch (error) {
+    console.error('Control command failed', error)
+  }
 }
 </script>
 

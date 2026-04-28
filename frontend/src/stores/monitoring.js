@@ -86,6 +86,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     archive_risks: [],
     history: []
   })
+  const alarmSettings = ref([])
 
   const operationsDashboard = reactive({
     summary: {},
@@ -107,6 +108,8 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   const latestData = reactive(createEmptyLatestData())
   const historicalData = ref([])
   const alarms = ref([])
+  const lastControlFeedback = ref(null)
+  const commandInFlightByComponent = reactive({})
   const loading = ref(false)
   const ammoniaAlert = ref(false)
   const lastRefreshError = ref('')
@@ -168,6 +171,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
         archive_risks: riskDashboard.archive_risks,
         history: riskDashboard.history
       },
+      alarmSettings: alarmSettings.value,
       operationsDashboard: {
         summary: operationsDashboard.summary,
         daily_tasks: operationsDashboard.daily_tasks,
@@ -202,6 +206,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     Object.assign(controlDashboard, cache.controlDashboard || {})
     Object.assign(archiveDashboard, cache.archiveDashboard || {})
     Object.assign(riskDashboard, cache.riskDashboard || {})
+    alarmSettings.value = cache.alarmSettings || []
     Object.assign(operationsDashboard, cache.operationsDashboard || {})
     Object.assign(systemDashboard, cache.systemDashboard || {})
     Object.assign(latestData, cache.latestData || createEmptyLatestData())
@@ -301,6 +306,40 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     }
   }
 
+  function mergeLatestCommandFeedback(commandId, fallback) {
+    const latest = controlDashboard.recent_commands.find(command => command.id === commandId)
+    if (!latest) return fallback
+    return {
+      ...fallback,
+      ...latest
+    }
+  }
+
+  async function waitForCommandSettlement(commandId, fallback) {
+    const startedAt = Date.now()
+    let latestFeedback = fallback
+
+    while (Date.now() - startedAt < 16000) {
+      await new Promise(resolve => window.setTimeout(resolve, 2000))
+      await fetchControlDashboard()
+
+      latestFeedback = mergeLatestCommandFeedback(commandId, latestFeedback)
+      lastControlFeedback.value = latestFeedback
+
+      if (['success', 'failed'].includes(latestFeedback?.status)) {
+        return latestFeedback
+      }
+    }
+
+    return latestFeedback
+  }
+
+  function trackCommandSettlement(commandId, fallback) {
+    waitForCommandSettlement(commandId, fallback).catch(() => {
+      // Keep UI responsive even if background polling fails.
+    })
+  }
+
   async function fetchArchiveDashboard() {
     const response = await archiveAPI.getDashboard()
     if (response.data.status === 'success') {
@@ -315,6 +354,14 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     const response = await alarmAPI.getRiskDashboard()
     if (response.data.status === 'success') {
       Object.assign(riskDashboard, response.data.data)
+      persistCache()
+    }
+  }
+
+  async function fetchAlarmSettings() {
+    const response = await alarmAPI.getSettings()
+    if (response.data.status === 'success') {
+      alarmSettings.value = response.data.data
       persistCache()
     }
   }
@@ -379,27 +426,48 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     await Promise.all([fetchAlarms(), fetchRiskDashboard()])
   }
 
+  async function updateAlarmSetting(alarmType, payload) {
+    const response = await alarmAPI.updateSetting(alarmType, payload)
+    if (response.data.status !== 'success') {
+      throw new Error('更新预警设置失败')
+    }
+    await Promise.all([fetchAlarmSettings(), fetchRiskDashboard(), fetchAlarms()])
+    return response.data.data
+  }
+
   async function executeControlCommand(targetComponent, commandType, reason) {
-    if (!selectedDeviceId.value) return
-    controlDashboard.devices = controlDashboard.devices.map(device => {
-      if (device.device_id !== selectedDeviceId.value) return device
-      return {
-        ...device,
-        components: (device.components || []).map(component =>
-          component.component_key === targetComponent
-            ? { ...component, status: commandType, mode: 'manual' }
-            : component
-        )
+    if (!selectedDeviceId.value) return null
+    commandInFlightByComponent[targetComponent] = true
+    try {
+      const response = await controlAPI.executeCommand(selectedDeviceId.value, {
+        target_component: targetComponent,
+        command_type: commandType,
+        execution_mode: 'manual',
+        reason
+      })
+      const result = response?.data?.data || null
+      lastControlFeedback.value = result
+      await fetchControlDashboard()
+      if (!result?.id) {
+        return result
       }
-    })
-    persistCache()
-    await controlAPI.executeCommand(selectedDeviceId.value, {
-      target_component: targetComponent,
-      command_type: commandType,
-      execution_mode: 'manual',
-      reason
-    })
-    await fetchControlDashboard()
+      const mergedResult = mergeLatestCommandFeedback(result.id, result)
+      lastControlFeedback.value = mergedResult
+      trackCommandSettlement(result.id, mergedResult)
+      return mergedResult
+    } catch (error) {
+      lastControlFeedback.value = {
+        target_component: targetComponent,
+        command_type: commandType,
+        status: 'failed',
+        reason,
+        error_message: normalizeError(error, 'Control command failed')
+      }
+      await fetchControlDashboard().catch(() => {})
+      throw error
+    } finally {
+      commandInFlightByComponent[targetComponent] = false
+    }
   }
 
   async function toggleAutomationRule(ruleId, isEnabled) {
@@ -991,7 +1059,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   }
 
   async function refreshAlarmsModule() {
-    await Promise.all([fetchRiskDashboard(), fetchAlarms()])
+    await Promise.all([fetchRiskDashboard(), fetchAlarms(), fetchAlarmSettings()])
   }
 
   async function refreshOperationsModule() {
@@ -1058,11 +1126,14 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     controlDashboard,
     archiveDashboard,
     riskDashboard,
+    alarmSettings,
     operationsDashboard,
     systemDashboard,
     latestData,
     historicalData,
     alarms,
+    lastControlFeedback,
+    commandInFlightByComponent,
     loading,
     ammoniaAlert,
     lastRefreshError,
@@ -1081,6 +1152,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     fetchControlDashboard,
     fetchArchiveDashboard,
     fetchRiskDashboard,
+    fetchAlarmSettings,
     fetchOperationsDashboard,
     fetchSystemDashboard,
     fetchLatestData,
@@ -1088,6 +1160,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     fetchAlarms,
     acknowledgeAlarm,
     resolveAlarm,
+    updateAlarmSetting,
     executeControlCommand,
     toggleAutomationRule,
     createTask,
