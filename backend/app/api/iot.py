@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from starlette.requests import ClientDisconnect
 
 from app.core.database import get_db
 from app.schemas import TelemetryData
@@ -46,7 +47,10 @@ DEVICE_ID_KEYS = {
 
 async def _read_ctwing_request(request: Request) -> Any:
     content_type = request.headers.get("content-type", "")
-    raw_body = await request.body()
+    try:
+        raw_body = await request.body()
+    except ClientDisconnect:
+        return {"_client_disconnected": True}
 
     if "application/json" in content_type:
         try:
@@ -192,13 +196,48 @@ def _build_telemetry(wrapper: Any, payload: dict[str, Any]) -> TelemetryData | N
     )
 
 
+def _build_ack_result(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if payload.get("type") != "ack":
+        return None
+
+    command_id = payload.get("command_id") or payload.get("id")
+    status_value = str(payload.get("status") or "").lower()
+    if not command_id:
+        return None
+
+    mapped_status = "success" if status_value == "ok" else "failed"
+    return {
+        "command_id": int(command_id),
+        "status": mapped_status,
+        "raw_status": status_value,
+    }
+
+
 @router.post("/ctwing/uplink")
 async def receive_ctwing_uplink(
     request: Request,
     db: Session = Depends(get_db),
 ):
     wrapper = await _read_ctwing_request(request)
+    if isinstance(wrapper, dict) and wrapper.get("_client_disconnected"):
+        return {
+            "status": "ignored",
+            "message": "client disconnected before request body was fully received",
+        }
     payload = _extract_payload(wrapper)
+    ack = _build_ack_result(payload)
+
+    if ack is not None:
+        result = ControlService.update_command_status(db, ack["command_id"], ack["status"])
+        return {
+            "status": "success",
+            "message": "CTWing command ack received",
+            "data": {
+                **result,
+                "raw_status": ack["raw_status"],
+            },
+        }
+
     telemetry = _build_telemetry(wrapper, payload)
 
     if telemetry is None:

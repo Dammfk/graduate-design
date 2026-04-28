@@ -1,0 +1,1024 @@
+
+--- PAGE 1 ---
+ 
+ 
+ 
+第三方设备云接入 
+中国电信物联网开放平台  
+规范 
+ 
+ 
+（V7.0） 
+天翼物联科技有限公司二〇二〇年二月 
+
+--- PAGE 2 ---
+ 
+目录 
+1 总体说明  .............................................................................................................................................................. 1 
+1.1 网络结构  .................................................................................................................................................. 1 
+1.2 接口原型示例  .......................................................................................................................................... 1 
+2 接口列表  .............................................................................................................................................................. 2 
+2.1 安全认证  .................................................................................................................................................. 2 
+2.1.1 公共参数  ...................................................................................................................................... 2 
+2.1.2 接口签名  ...................................................................................................................................... 3 
+2.2 设备管理 .................................................................................................................................................. 3 
+2.2.1 创建设备  ...................................................................................................................................... 3 
+2.2.2  删除设备  ...................................................................................................................................... 6 
+2.2.3 查询设备  ...................................................................................................................................... 8 
+2.2.4 查询设备状态  ............................................................................................................................ 10 
+2.3 推送  ........................................................................................................................................................ 12 
+2.3.1 设备状态变化通知  .................................................................................................................... 12 
+2.3.2 设备数据变化通知  .................................................................................................................... 14 
+2.3.3 设备指令状态通知  .................................................................................................................... 16 
+2.3.4 设备指令响应通知(可选) .......................................................................................................... 18 
+2.4 指令  ........................................................................................................................................................ 19 
+2.4.1 指令下发  .................................................................................................................................... 19 
+2.4.2 指令状态、结果查询  ................................................................................................................ 22 
+3、错误处理  ......................................................................................................................................................... 25 
+3.1 验签失败 ................................................................................................................................................. 25 
+3.2 HTTP 错误码  ......................................................................................................................................... 25 
+3.3 业务错误码  ............................................................................................................................................ 25 
+--- PAGE 3 ---
+ 
+4、需提供的信息 .................................................................................................................................................. 26 
+ 
+--- PAGE 4 ---
+1 
+1 总体说明 
+1.1 网络结构 
+ 
+云对云接入，即开发者/合作伙伴自有智能云与中国电信物联网开放平台对接，其智能
+硬件接入自有智能云后，也间接实现了与电信物联网开放平台的接入。 
+中国电信物联网开放平台支持如上云云对接的方式，双方云平台分别实现本文档中定义
+的 API 接口，即可实现对设备的管理、数据上报和指令下发等功能。 
+1.2 接口原型示例 
+请求方法 POST 
+请求地址示例 https://server:port/ctwing-api 
+传输协议 HTTPS 
+ 
+
+--- PAGE 5 ---
+2 
+2 接口列表 
+参数位置说明 
+参数 描述 
+header http 头部的参数。 
+path url 中 path 部分的参数。 
+query url 中?后面的参数。 
+body http body 部分的参数。 
+ 
+2.1 安全认证 
+2.1.1 公共参数 
+以下公共参数在进行 API 调用时, 通过 HTTP 请求头(header)携带。 
+参数 名称 位置 描述 
+platformId 第三方云平台标识 header 由物联网开放平台分
+配给第三方云平台的
+标识 
+ aepId 物联网开放平台标识 header 物联网开放平台 的标
+识，双方约定 
+signature 签名数据 header 将 HTTP body 连同
+aepId、aepSecret 一
+起签名后的数据，如
+果需要进行签名认证
+则需要填写。 由物联
+网开放平台计算生
+--- PAGE 6 ---
+3 
+成，第三方云进行验
+签。 
+2.1.2 接口签名 
+签名认证 
+调用 API 时，需要对数据进行签名并提交签名数据。签名源数据包含 aepId、HTTP 
+BODY、aepSecret。 
+签名算法 
+1. 按顺序将$aepId、HTTP BODY 中的 json、$aepSecret 三个字符串进行拼接; 
+2. 将第 1 步的结果 MD5 后生成签名参数 signature 的值； 
+签名样例： 
+aepId：“123456” 
+HTTP BODY： {“key1”:“abc”} 
+假设线下约定的 aepSecret=“Aep” 
+那进行 MD5 的字符串就是 
+123456{"key1":"abc"}Aep 
+MD5 如上字符串生成的 32 位小写 signature 结果就是 4ac0fa93f085ab3bbfaa863853de2233 
+ 
+2.2 设备管理 
+物联网开放平台与第三方云同步设备信息，以进行后续的业务操作。 
+2.2.1 创建设备 
+调用方向 
+物联网开放平台 -> 第三方云 
+接口功能 
+在物联网开放平台添加设备信息时，同步到第三方云平台 
+请求参数 
+--- PAGE 7 ---
+4 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+请求的唯一标识，由调用方生成， 
+使用 uuid  
+intent 
+ 
+必选 string body 
+ 
+接口意图(接口名) 
+"createDevices" 
+productId 必选 int body 设备在物联网开放平台所属产品ID 
+devices 必选 json 
+array 
+body 
+ 设备信息 
+devices 参数结构： 
+参数 必选/
+可选 
+类型 位置 描述 
+deviceSn 必选 string body 
+ 设备本身编号，例如IMEI 或者MAC 
+deviceId 必选 string body 
+ 
+设备在物联网开放平台的唯一标识， 
+32 位uuid,全局唯一 
+deviceNam
+e  
+可选 string body 
+ 设备名称 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+intent 
+ 
+必选 string body 
+ 必须和请求中的 intent 一样 
+productId 必选 int body 必须和请求中的 productId 一样 
+devices 必选 json 
+array 
+body 
+ 创建设备信息结果集 
+devices 参数结构： 
+参数 必选/
+可选 
+类型 位置 描述 
+deviceId 必选 string body 
+ 必须和请求中的 deviceId 一样 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由第三方云自定义 
+description 必选 string body 
+ 错误描述 
+--- PAGE 8 ---
+5 
+ 
+请求示例 
+POST /ctwing-api 
+aepId: aaabbbccc 
+signature: xxxyyyzzz 
+Content-Type: application/json 
+Content-Length: 89 
+ 
+{ 
+ "requestId": "4c69f91e5f024261a6626f2122611877", 
+ "intent": "createDevices", 
+"productId": 11001200, 
+ "devices": [{ 
+   "deviceSn": "123456789012345", 
+   "deviceId": "cdce376213a0480fb11342f3e126a297", 
+   "deviceName": "灯泡小 A" 
+  }, 
+  { 
+   "deviceSn": "123456789012341", 
+   "deviceId": "4f5815d6b7a84fb5a30afb325b7f48ff", 
+   "deviceName": "灯泡小 B" 
+  } 
+ ] 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 188 
+ 
+{ 
+ "requestId": "4c69f91e5f024261a6626f2122611877", 
+ "intent": "createDevices", 
+"productId": 11001200, 
+--- PAGE 9 ---
+6 
+ "devices": [{ 
+   "deviceId": "cdce376213a0480fb11342f3e126a297", 
+   "statusCode": 0, 
+   "description": "" 
+  }, 
+  { 
+   "deviceId": "4f5815d6b7a84fb5a30afb325b7f48ff", 
+   " statusCode ": 10000, 
+   "description": "创建失败，设备已存在" 
+  } 
+ ] 
+} 
+2.2.2 删除设备 
+调用方向 
+物联网开放平台 -> 第三方云 
+接口功能 
+物联网开放平台删除设备信息时，在第三方云平台同步删除 
+请求参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+请求的唯一标识，由调用方生成，使用
+uuid  
+intent 
+ 
+必选 string body 
+ 
+接口意图(接口名) 
+“deleteDevices” 
+deviceIds 必选 json 
+array 
+body 
+ 设备在物联网开放平台的唯一标识集合 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+intent 
+ 
+必选 string body 
+ 必须和请求中的 intent 一样 
+--- PAGE 10 ---
+7 
+devices 必选 json 
+array 
+body 
+ 删除设备信息结果集 
+devices 参数结构： 
+参数 必选/
+可选 
+类型 位置 描述 
+deviceId 必选 string body 
+ 设备在物联网开放平台的唯一标识符 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由第三方云自定义 
+description 必选 string body 
+ 错误描述 
+ 
+请求示例 
+POST /ctwing-api 
+aepId: aaabbbccc 
+signature: xxxyyyzzz 
+Content-Type: application/json 
+Content-Length: 89 
+ 
+{ 
+ "requestId": "a0931092eb0b4a4e975ae6547dd22106", 
+ "intent": "deleteDevices", 
+ "deviceIds": ["cdce376213a0480fb11342f3e126a297", "4f5815d6b7a84fb5a30afb325b7f48ff 
+"] 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 188 
+ 
+{ 
+ "requestId": "a0931092eb0b4a4e975ae6547dd22106", 
+ "intent": "deleteDevices", 
+ "devices": [{ 
+   "deviceId": " cdce376213a0480fb11342f3e126a297", 
+--- PAGE 11 ---
+8 
+   "statusCode": 0, 
+   "description": "" 
+  }, 
+  { 
+   "deviceId": "4f5815d6b7a84fb5a30afb325b7f48ff ", 
+   "statusCode": 10001, 
+   "description": "删除失败，设备不存在" 
+  } 
+ ] 
+} 
+2.2.3 查询设备 
+调用方向 
+物联网开放平台 -> 第三方云 
+接口功能 
+物联网开放平台从第三方云查询设备信息 
+请求参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+请求的唯一标识，由调用方生成， 
+使用 uuid  
+intent 
+ 
+必选 string body 
+ 
+接口意图(接口名) 
+"queryDevices" 
+deviceIds 必选 string body 
+ 设备在物联网开放平台的唯一标识集合 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+intent 
+ 
+必选 string body 
+ 必须和请求中的 intent 一样 
+devices 必选 json 
+array 
+body 
+ 设备信息集合 
+devices 参数结构： 
+--- PAGE 12 ---
+9 
+参数 必选/
+可选 
+类型 位置 描述 
+deviceSn 必选 string body 
+ 设备本身编号 
+deviceId 必选 string body 
+ 设备在物联网开放平台的唯一标识 
+deviceNam
+e 
+可选 string body 
+ 设备的名字 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由第三方云自定义 
+description 必选 string body 
+ 错误描述 
+ 
+请求示例 
+POST /ctwing-api 
+aepId: aaabbbccc 
+signature: xxxyyyzzz 
+Content-Type: application/json 
+Content-Length: 89 
+ 
+{ 
+ "requestId": "929ea6bb04ca4efaace2cb8d06cced53", 
+ "intent": "queryDevices", 
+ "deviceIds": ["cdce376213a0480fb11342f3e126a297", "4f5815d6b7a84fb5a30afb325b7f48ff 
+"] 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 188 
+ 
+{ 
+ "requestId": "929ea6bb04ca4efaace2cb8d06cced53", 
+ "intent": "queryDevices", 
+ "devices": [{ 
+--- PAGE 13 ---
+10 
+   "deviceSn": "123456789012345", 
+   "deviceId": "cdce376213a0480fb11342f3e126a297", 
+   "deviceName": "灯泡小 A", 
+   " statusCode ": 0, 
+   "description": "" 
+  }, 
+  { 
+   "deviceSn": "", 
+   "deviceId": "4f5815d6b7a84fb5a30afb325b7f48ff", 
+   "deviceName": "", 
+   " statusCode ": 10001, 
+   "description": "查询失败，设备不存在" 
+  } 
+ ] 
+} 
+2.2.4 查询设备状态 
+调用方向 
+物联网开放平台 -> 第三方云 
+接口功能 
+物联网开放平台从第三方云读取设备的状态 
+请求参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+请求的唯一标识，由调用方生成，使用
+uuid  
+intent 必选 string body 
+ 
+接口意图(接口名) 
+"queryDeviceStatuses" 
+deviceIds 必选 json 
+array 
+body 
+ 设备ID 集合 
+响应参数 
+ 
+参数 必选/
+可选 
+类型 位置 描述 
+--- PAGE 14 ---
+11 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+intent 
+ 
+必选 string body 
+ 必须和请求中的 intent 一样 
+deviceStatu
+ses 
+必选 json 
+array 
+body 
+ 设备状态信息集合 
+deviceStatuses 参数结构： 
+参数 必选/
+可选 
+类型 位置 描述 
+deviceId 必选 string body 
+ 设备在第三方云平台的唯一标识符 
+deviceStatu
+s 
+必选 string body 
+ 
+设备当前状态，目前取值如下： 
+"online" 
+"offline" 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由第三方云自定义 
+description 必选 string body 
+ 错误描述 
+ 
+请求示例 
+POST /ctwing-api 
+aepId: aaabbbccc 
+signature: xxxyyyzzz 
+Content-Type: application/json 
+Content-Length: 87 
+ 
+{ 
+ "requestId": "a05fac21904348cf9fd7267e1afed4ba", 
+ "intent": "queryDeviceStatuses", 
+ "deviceIds": ["cdce376213a0480fb11342f3e126a297", 
+"4f5815d6b7a84fb5a30afb325b7f48ff"] 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 197 
+ 
+--- PAGE 15 ---
+12 
+{ 
+ "requestId": "a05fac21904348cf9fd7267e1afed4ba", 
+ "intent": "queryDeviceStatuses", 
+ "devices": [{ 
+   "deviceId": "cdce376213a0480fb11342f3e126a297", 
+   "deviceStatus": "online", 
+   "statusCode": 0, 
+   "description": "" 
+  }, 
+  { 
+   "deviceId": "4f5815d6b7a84fb5a30afb325b7f48ff", 
+   "deviceStatus": "", 
+   "statusCode": 10001, 
+   "description": "查询失败，设备不存在" 
+  } 
+ ] 
+} 
+2.3 推送 
+当设备发生变化时，第三方云平台 需要向 物联网开放平台推送通知消息。 
+2.3.1 设备状态变化通知 
+调用方向 
+第三方云->物联网开放平台  
+接口功能 
+设备状态发生变化时，第三方云给物联网开放平台推送通知 
+请求参数 
+参数 必选 /可
+选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+第三方云填写，每个请求都不一样。
+使用 uuid。 
+--- PAGE 16 ---
+13 
+notifyType 必选 string body 
+ 推送类型 
+"deviceStatus" 
+deviceId 必选 string body 设备唯一标识 
+status 必选 string body 
+ 
+设备当前状态，目前取值如下： 
+"online" 
+"offline" 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requestId 一样 
+notifyType 必选 string body 
+ 必须和请求中的 notifyType 一样 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由物联网开放平台定义 
+description 必选 string body 
+ 错误描述 
+请求示例 
+POST /notification/cloud/message 
+Host: nbgw.ctwing.cn:8980 
+platformId: xxxx 
+Content-Type: application/json 
+Content-Length: 127 
+ 
+{ 
+ "requestId": "260fe625a0174b9d900b3899ebebda06", 
+ "notifyType": "deviceStatus", 
+ "deviceId": "f931cc93cadd41ca816ba2862a4ae76a", 
+ "status": "online" 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 127 
+--- PAGE 17 ---
+14 
+ 
+{ 
+ "requestId": "260fe625a0174b9d900b3899ebebda06", 
+ "notifyType": "deviceStatus", 
+ "statusCode": 0, 
+ "description": "" 
+} 
+2.3.2 设备数据变化通知 
+调用方向 
+第三方云->物联网开放平台  
+接口功能 
+设备数据发生变化时，第三方云给物联网开放平台推送通知 
+请求参数 
+参数 必选 /可
+选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+第三方云填写，每个请求都不一样。
+使用 uuid。 
+notifyType 必选 string body 
+ 推送类型 
+"deviceData" 
+serviceType 必选 string body 服务类型 
+数据上报：dataReport  
+事件上报：eventReport 
+deviceId 必选 string body 设备在物联网开放平台的唯一标识 
+data 必选 json body 设备数据（数据上报/事件上报的内
+容） 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requestId 一样 
+notifyType  必选 string body 
+ 必须和请求中的 notifyType 一样 
+--- PAGE 18 ---
+15 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由物联网开放平台定义 
+description 必选 string body 
+ 错误描述 
+请求示例 
+POST /notification/cloud/message 
+Host: nbgw.ctwing.cn:8980 
+platformId: xxxx 
+Content-Type: application/json 
+Content-Length: 227 
+ 
+{ 
+ "requestId": "a79f973ebb384f6bbef3f6640c0a6ecb", 
+ "notifyType": "deviceData", 
+ "serviceType": "dataReport", 
+ "deviceId": "f931cc93cadd41ca816ba2862a4ae76a", 
+ "data": { 
+  "brightness": 80 
+ } 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 127 
+ 
+{ 
+ "requestId": "a79f973ebb384f6bbef3f6640c0a6ecb", 
+ "notifyType": "deviceData", 
+ "statusCode": 0, 
+ "description": "" 
+} 
+--- PAGE 19 ---
+16 
+2.3.3 设备指令状态通知 
+调用方向 
+第三方云->物联网开放平台  
+接口功能 
+设备指令状态变化，第三方云给物联网开放平台推送通知 
+请求参数 
+参数 必选 /可
+选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+第三方云填写，每个请求都不一样。
+使用 uuid。 
+notifyType 必选 string body 
+ 推送类型 
+"commandStatus" 
+deviceId 必选 string body 设备唯一标识 
+commandId 
+必选 
+string body 指令ID，指令的唯一标识符， 
+使用 uuid 
+status 必选 string body 
+ 
+指令状态，根据实际情况填写。 
+ sent_to_cloud：已发送给第三方
+云；由物联网平台生成。 
+ send_to_cloud_failure：发送给第
+三方云失败；由物联网平台生
+成。 
+以下由第三方云生成： 
+ sent：已发送 
+ delivered：已送达 
+ executed：已执行 
+ timeout：已超时 
+ failed：已失败 
+ 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+--- PAGE 20 ---
+17 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+notifyType  必选 string body 
+ 必须和请求中的 notifyType 一样 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由物联网开放平台定义 
+description 必选 string body 
+ 错误描述 
+请求示例 
+POST /notification/cloud/message 
+Host: nbgw.ctwing.cn:8980 
+platformId: xxxx 
+Content-Type: application/json 
+Content-Length: 227 
+ 
+{ 
+ "requestId": "acfb25d4675043159a8ab9ed32f3adf8", 
+ "notifyType": "commandStatus", 
+ "deviceId": "f931cc93cadd41ca816ba2862a4ae76a", 
+ "commandId": "e931cc93cadd41ca816ba2862a412345", 
+ "status": "delivered" 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 127 
+ 
+{ 
+ "requestId": "acfb25d4675043159a8ab9ed32f3adf8", 
+ "notifyType": "commandStatus", 
+ "statusCode": 10004, 
+ "description": "invalid parameters" 
+} 
+--- PAGE 21 ---
+18 
+2.3.4 设备指令响应通知(可选) 
+调用方向 
+第三方云->物联网开放平台  
+接口功能 
+设备发送指令响应时(如有)，第三方云给物联网开放平台推送通知。 
+请求参数 
+参数 必选 /可
+选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+第三方自己填写，每个请求都不一
+样。使用 uuid 
+notifyType 必选 string body 
+ 设备指令响应 
+"commandResponse" 
+deviceId 必选 string body 设备唯一标识 
+commandId 必选 string body 指令的唯一标识符，使用 uuid 
+response 必选 json body 
+ 指令响应 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+notifyType  必选 string body 
+ 必须和请求中的 notifyType 一样 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由物联网开放平台定义 
+description 必选 string body 
+ 错误描述 
+请求示例 
+POST /notification/cloud/message 
+Host: nbgw.ctwing.cn:8980 
+platformId: xxxx 
+--- PAGE 22 ---
+19 
+Content-Type: application/json 
+Content-Length: 227 
+ 
+{ 
+ "requestId": "41b2e9f67aa64668a9dfe297f64b7de1", 
+ "notifyType": "commandResponse", 
+ "deviceId": "f931cc93cadd41ca816ba2862a4ae76a", 
+ "commandId": "e931cc93cadd41ca816ba2862a412345", 
+ "response": { 
+  "temperature": 20 
+ } 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 127 
+ 
+{ 
+ "requestId": "41b2e9f67aa64668a9dfe297f64b7de1", 
+ "notifyType": "commandResponse", 
+ "statusCode": 0, 
+ "description": "" 
+} 
+2.4 指令 
+物联网开放平台通过调用第三方云平台的接口，实现对设备的指令(命令)下发，指令状
+态、结果查看等。 
+2.4.1 指令下发 
+调用方向 
+物联网开放平台 -> 第三方云 
+接口功能 
+--- PAGE 23 ---
+20 
+对物联网设备下发指令(命令) 
+请求参数 
+参数 必选/ 
+可选 
+类型 位置 描述 
+requestI
+d 
+必选 string body 
+ 请求的唯一标识，由调用方生成，使用 uuid  
+intent 
+ 
+必选 string body 
+ 
+接口意图(接口名) 
+"commands" 
+comman
+ds 
+必选 json 
+array 
+body 指令集合 
+commands 结构体说明： 
+参数 必选/ 
+可选 
+类型 位置 描述 
+deviceId 必选 string body 设备唯一标识符 
+commandId 必选 string body 指令的唯一标识符，由物联网开放平台
+生成，使用uuid 
+command 必选 json body 指令内容 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+intent 
+ 
+必选 string body 
+ 必须和请求中的 intent 一样 
+commands 必选 json 
+array 
+body 
+ 指令执行结果集合 
+commands 参数结构： 
+参数 必选/
+可选 
+类型 位置 描述 
+deviceId 必选 string body 
+ 设备唯一标识 
+commandId 必选 string body 指令的唯一标识符，使用 uuid 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+--- PAGE 24 ---
+21 
+由第三方云自定义 
+description 必选 string body 
+ 错误描述 
+ 
+请求示例 
+POST /ctwing-api 
+aepId: aaabbbccc 
+signature: xxxyyyzzz 
+Content-Type: application/json 
+Content-Length: 267 
+ 
+{ 
+ "requestId": "89b84dbc29ac47f997aaa8c6de2368ed", 
+ "intent": "commands", 
+ "commands": [{ 
+   "deviceId": "cdce376213a0480fb11342f3e126a297", 
+   "commandId": "e931cc93cadd41ca816ba2862a412345", 
+   "command": { 
+    "color": "red" 
+   } 
+  }, 
+  { 
+   "deviceId": "4f5815d6b7a84fb5a30afb325b7f48ff", 
+   "commandId": "4855b8c6e0e141a5bf989b3390736ca0", 
+   "command": { 
+    "switch": "on" 
+   } 
+  } 
+ ] 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+--- PAGE 25 ---
+22 
+Content-Length: 213 
+ 
+{ 
+ "requestId": "89b84dbc29ac47f997aaa8c6de2368ed", 
+ "intent": "commands", 
+ "commands": [{ 
+   "deviceId": "cdce376213a0480fb11342f3e126a297", 
+   "commandId": "e931cc93cadd41ca816ba2862a412345", 
+   "statusCode": 0, 
+   "description": "" 
+  }, 
+  { 
+   "deviceId": "4f5815d6b7a84fb5a30afb325b7f48ff ", 
+   "commandId": "4855b8c6e0e141a5bf989b3390736ca0", 
+   "statusCode": 10005, 
+   "description": "设备状态错误" 
+  } 
+ ] 
+} 
+2.4.2 指令状态、结果查询 
+调用方向 
+物联网开放平台 -> 第三方云 
+接口功能 
+物联网开放平台从第三方云读取指令执行结果 
+请求参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 
+请求的唯一标识，由调用方生成，使用
+uuid  
+intent 
+ 
+必选 string body 
+ 
+接口意图(接口名) 
+"queryCommands" 
+commandId
+s 
+必选 json 
+array 
+body 
+ 指令的唯一标识符，使用 uuid 
+--- PAGE 26 ---
+23 
+响应参数 
+参数 必选/
+可选 
+类型 位置 描述 
+requestId 必选 string body 
+ 必须和请求中的 requedtId 一样 
+intent 
+ 
+必选 string body 
+ 必须和请求中的 intent 一样 
+commands 必选 json 
+array 
+body 
+ 指令执行结果集合 
+commands 参数结构： 
+参数 必选/
+可选 
+类型 位置 描述 
+commandId 必选 string body 必须和请求中的 commandId 一样 
+commandSt
+atus 
+必选 string body 
+ 
+指令状态。 
+ sent：已发送 
+ delivered：已送达 
+ executed：已执行 
+ timeout：已超时 
+ failed：已失败 
+commandR
+esponse 
+可选 json body 
+ 指令响应，没有则不需携带 
+statusCode 必选 int body 状态码。 
+0 成功，非0 失败 
+由第三方云自定义 
+description 必选 string body 
+ 错误描述 
+ 
+请求示例 
+POST /ctwing-api 
+aepId: aaabbbccc 
+signature: xxxyyyzzz 
+Content-Type: application/json 
+Content-Length: 87 
+ 
+{ 
+ "requestId": "b06692a9b426451dae9a78c91e2783bb", 
+--- PAGE 27 ---
+24 
+ "intent": "queryCommands", 
+ "commandIds": ["e931cc93cadd41ca816ba2862a412345", 
+"4855b8c6e0e141a5bf989b3390736ca0"] 
+} 
+响应示例 
+HTTP/1.1 200 OK 
+Content-Type: application/json 
+Content-Length: 197 
+ 
+{ 
+ "requestId": "b06692a9b426451dae9a78c91e2783bb", 
+ "intent": " queryCommands ", 
+ "commands": [{ 
+   "commandId": "e931cc93cadd41ca816ba2862a412345", 
+   "commandStatus": "executed", 
+   "commandResponse": { 
+    "color": "green" 
+   }, 
+   "statusCode": 0, 
+   "description": "" 
+  }, 
+  { 
+   "commandId": "4855b8c6e0e141a5bf989b3390736ca0", 
+   "commandStatus": "", 
+   "statusCode": 10003, 
+   "description": "指令不存在" 
+  } 
+ ] 
+} 
+--- PAGE 28 ---
+25 
+3、错误处理 
+3.1 验签失败 
+返回如下消息： 
+HTTP/1.1 401 Unauthorized 
+x-aep-message: "我是错误描述" 
+ 
+3.2 HTTP 错误码 
+错误码沿用 HTTP 状态码方案，并在 HTTP 响应的 header 中 x-aep-message 中返回具体异
+常信息。错误码主要包括以下几种： 
+错误码 错误类型描述 错误类型说明 
+400 Bad request 主要为用户输入数据不完整
+或者格式不正确错误。 
+401 Unauthorized 权限（签名、 API 权限）校
+验不通过。 
+403 Forbidden 请求禁止（流量超标、重复
+请求、过时的请求）。 
+404 Not found 请求的资源（如 API 版本
+等）不存在。 
+500 Internal Error 未预料到的程序异常 
+503 Service Unavailable 系统不可用  
+504 Async Service 服务访问超时，可以尝试重
+试。 
+ 
+3.3 业务错误码 
+除此之外，业务错误码和错误信息由 物联网开放平台和第三方云平台 共同定义，并携带
+在 HTTP BODY 的 statusCode 和 description 字段中。 
+--- PAGE 29 ---
+26 
+ 
+4、需提供的信息 
+1. 第三方云提供接入物联网开放平台的源IP 地址，用于白名单配置 
+2. 第三方云提供API 接口的公网/内网调用地址 
+3. 物联网开放平台提供接收推送消息的公网/内网地址 

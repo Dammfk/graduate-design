@@ -13,6 +13,17 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SQL_ECHO: bool = False
 
+    CTWING_API_BASE_URL: str = "https://ag-api.ctwing.cn"
+    CTWING_COMMAND_API_VERSION: str = "20190712225145"
+    CTWING_APP_KEY: Optional[str] = None
+    CTWING_APP_SECRET: Optional[str] = None
+    CTWING_MASTER_KEY: Optional[str] = None
+    CTWING_PRODUCT_ID: Optional[int] = None
+    CTWING_DEVICE_ID: Optional[str] = None
+    CTWING_LOCAL_DEVICE_ID: str = "DEVICE_001"
+    CTWING_OPERATOR: str = "nimama666"
+    CTWING_COMMAND_TTL: int = 7200
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def normalize_debug(cls, value):

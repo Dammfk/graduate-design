@@ -950,20 +950,30 @@ static void App_NbPollDownlink(void)
   char queue_status[128];
 
   if (!nb_network_ready) {
+    APP_UART_SendText("[NB POLL] WAIT READY\r\n");
     return;
   }
 
+  APP_UART_SendText("[NB POLL] AT+NMGR\r\n");
   App_NbDrainResponse(80U);
   if (APP_NB_UART_SendText("AT+NMGR\r\n") != HAL_OK) {
+    APP_UART_SendText("[NB POLL] SEND FAIL\r\n");
     App_NbSetReady(false);
     return;
   }
   if (App_NbReadResponse(response, sizeof(response), APP_NB_DOWNLINK_READ_MS) > 0U) {
     App_NbHandleResponse(response);
+  } else {
+    APP_UART_SendText("[NB POLL] NO RESPONSE\r\n");
   }
 
+  APP_UART_SendText("[NB POLL] AT+NQMGR\r\n");
   if (APP_NB_UART_SendText("AT+NQMGR\r\n") == HAL_OK) {
-    (void)App_NbReadResponse(queue_status, sizeof(queue_status), 800U);
+    if (App_NbReadResponse(queue_status, sizeof(queue_status), 800U) == 0U) {
+      APP_UART_SendText("[NB POLL] NQMGR NO RESPONSE\r\n");
+    }
+  } else {
+    APP_UART_SendText("[NB POLL] NQMGR SEND FAIL\r\n");
   }
 #endif
 }

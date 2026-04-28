@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models import AutomationRule, ControlCommandLog, Device, EnvironmentData
+from .ctwing_command_service import CTWingCommandService
 
 
 class ControlService:
@@ -55,6 +56,20 @@ class ControlService:
             return False
 
         return latest.status in ["pending", "sent", "success"]
+
+    @staticmethod
+    def _map_ctwing_command_status(dispatch_result: dict) -> str:
+        status_text = ""
+        if isinstance(dispatch_result, dict):
+            status_text = str(dispatch_result.get("result", {}).get("commandStatus") or "")
+
+        if status_text == "指令已送达":
+            return "sent"
+        if status_text == "指令已保存":
+            return "pending"
+        if status_text in {"指令发送超时", "失败", "发送失败"}:
+            return "failed"
+        return "pending"
 
     @staticmethod
     def ensure_default_rules(db: Session) -> None:
@@ -149,25 +164,20 @@ class ControlService:
 
     @staticmethod
     def _infer_component_status(device: Device, latest: EnvironmentData | None) -> dict[str, dict]:
-        latest = latest or EnvironmentData()
-        temp = latest.temperature
-        ammonia = latest.ammonia_concentration
-        co2 = latest.co2_concentration
-
         return {
             "fan": {
                 "component_name": "排风风机",
-                "status": "ON" if ((temp is not None and temp > 30) or (ammonia is not None and ammonia > 20) or (co2 is not None and co2 > 1800)) else "OFF",
+                "status": "OFF",
                 "mode": "auto",
             },
             "cooling_pad": {
                 "component_name": "水帘降温",
-                "status": "ON" if temp is not None and temp > 32 else "OFF",
+                "status": "OFF",
                 "mode": "auto",
             },
             "fill_light": {
                 "component_name": "补光灯",
-                "status": "ON" if device.device_type == "controller" else "OFF",
+                "status": "OFF",
                 "mode": "manual",
             },
         }
@@ -312,6 +322,26 @@ class ControlService:
         db.commit()
         db.refresh(log)
 
+        dispatch_result = CTWingCommandService.dispatch_command(
+            command_id=log.id,
+            device_id=device.device_id,
+            target_component=log.target_component,
+            command_type=log.command_type,
+            reason=log.reason,
+        )
+        log.status = ControlService._map_ctwing_command_status(dispatch_result)
+        log.payload = json.dumps(
+            {
+                "device_id": device.device_id,
+                "target_component": target_component,
+                "command_type": command_type.upper(),
+                "ctwing_result": dispatch_result,
+            },
+            ensure_ascii=False,
+        )
+        db.commit()
+        db.refresh(log)
+
         return {
             "id": log.id,
             "device_id": device.device_id,
@@ -322,6 +352,17 @@ class ControlService:
             "status": log.status,
             "reason": log.reason,
             "executed_at": log.executed_at.isoformat(),
+            "ctwing_result": dispatch_result,
+            "ctwing_command_id": (
+                dispatch_result.get("result", {}).get("commandId")
+                if isinstance(dispatch_result, dict)
+                else None
+            ),
+            "ctwing_command_status": (
+                dispatch_result.get("result", {}).get("commandStatus")
+                if isinstance(dispatch_result, dict)
+                else None
+            ),
         }
 
     @staticmethod
@@ -443,6 +484,23 @@ class ControlService:
                 created_at=datetime.utcnow(),
             )
             db.add(log)
+            db.flush()
+
+            dispatch_result = CTWingCommandService.dispatch_command(
+                command_id=log.id,
+                device_id=device.device_id,
+                target_component=log.target_component,
+                command_type=log.command_type,
+                reason=log.reason,
+            )
+            log.status = ControlService._map_ctwing_command_status(dispatch_result)
+            log.payload = json.dumps(
+                {
+                    "environment_snapshot": snapshot,
+                    "ctwing_result": dispatch_result,
+                },
+                ensure_ascii=False,
+            )
 
         if commands:
             db.commit()
