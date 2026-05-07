@@ -292,56 +292,61 @@ class ArchiveService:
         animal = ArchiveService._get_animal_or_raise(db, animal_id)
         history_records: list[AnimalProfileHistory] = []
 
+        def append_history(field_name: str, old_value, new_value) -> None:
+            if old_value == new_value:
+                return
+            history_records.append(
+                AnimalProfileHistory(
+                    animal_id=animal.id,
+                    field_name=field_name,
+                    old_value=str(old_value) if old_value is not None else None,
+                    new_value=str(new_value) if new_value is not None else None,
+                    changed_at=datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                )
+            )
+
         if animal_code is not None and animal_code != animal.animal_code:
             existing = db.query(AnimalProfile).filter(AnimalProfile.animal_code == animal_code).first()
             if existing:
                 raise ValueError(f"Animal code already exists: {animal_code}")
+            append_history("animal_code", animal.animal_code, animal_code)
             animal.animal_code = animal_code
         if species is not None:
+            append_history("species", animal.species, species)
             animal.species = species
         if breed is not None:
+            append_history("breed", animal.breed, breed)
             animal.breed = breed
         if gender is not None:
+            append_history("gender", animal.gender, gender)
             animal.gender = gender
         if birth_date is not None:
+            append_history("birth_date", animal.birth_date, birth_date)
             animal.birth_date = birth_date
         if check_in_date is not None:
+            append_history("check_in_date", animal.check_in_date, check_in_date)
             animal.check_in_date = check_in_date
         if weight is not None:
-            if animal.weight != weight:
-                history_records.append(
-                    AnimalProfileHistory(
-                        animal_id=animal.id,
-                        field_name="weight",
-                        old_value=str(animal.weight) if animal.weight is not None else None,
-                        new_value=str(weight),
-                        changed_at=datetime.utcnow(),
-                        created_at=datetime.utcnow(),
-                    )
-                )
+            append_history("weight", animal.weight, weight)
             animal.weight = weight
         if health_status is not None:
+            append_history("health_status", animal.health_status, health_status)
             animal.health_status = health_status
         if ear_tag is not None:
-            if animal.ear_tag != ear_tag:
-                history_records.append(
-                    AnimalProfileHistory(
-                        animal_id=animal.id,
-                        field_name="ear_tag",
-                        old_value=animal.ear_tag,
-                        new_value=ear_tag,
-                        changed_at=datetime.utcnow(),
-                        created_at=datetime.utcnow(),
-                    )
-                )
+            append_history("ear_tag", animal.ear_tag, ear_tag)
             animal.ear_tag = ear_tag
         if source is not None:
+            append_history("source", animal.source, source)
             animal.source = source
         if immunization_note is not None:
+            append_history("immunization_note", animal.immunization_note, immunization_note)
             animal.immunization_note = immunization_note
         if notes is not None:
+            append_history("notes", animal.notes, notes)
             animal.notes = notes
         if is_active is not None:
+            append_history("is_active", animal.is_active, is_active)
             animal.is_active = is_active
 
         animal.updated_at = datetime.utcnow()

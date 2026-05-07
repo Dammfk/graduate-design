@@ -168,15 +168,15 @@
               </div>
 
               <div v-if="historyExpanded" class="history-box">
-                <h4>个体更新记录</h4>
+                <h4>耳标 / 体重更新记录</h4>
                 <div v-if="selectedAnimal.history_records?.length" class="history-list">
                   <div v-for="record in selectedAnimal.history_records" :key="record.id" class="history-item">
-                    <strong class="history-field">{{ historyFieldLabel(record.field_name) }}</strong>
-                    <span class="history-change">{{ record.old_value || '--' }} -> {{ record.new_value || '--' }}</span>
-                    <small class="history-time">{{ formatDateTime(record.changed_at) }}</small>
+                    <strong>{{ historyFieldLabel(record.field_name) }}</strong>
+                    <span>{{ record.old_value || '--' }} -> {{ record.new_value || '--' }}</span>
+                    <small>{{ formatDateTime(record.changed_at) }}</small>
                   </div>
                 </div>
-                <p v-else>暂无个体历史更新记录。</p>
+                <p v-else>暂无耳标号或体重的历史更新记录。</p>
               </div>
             </div>
             <div v-else class="empty-state">
@@ -347,7 +347,7 @@ watch(
 
 watch(
   () => props.selectedArchive,
-  (archive, previousArchive) => {
+  (archive) => {
     if (!archive) return
 
     archiveForm.batch_number = archive.batch_number || ''
@@ -365,9 +365,7 @@ watch(
     if (!animals.some((animal) => animal.id === selectedAnimalId.value)) {
       selectedAnimalId.value = animals[0]?.id ?? null
     }
-    if (archive.id !== previousArchive?.id) {
-      historyExpanded.value = false
-    }
+    historyExpanded.value = false
   },
   { immediate: true }
 )
@@ -384,7 +382,7 @@ watch([filteredAnimals, animalPage], () => {
 
 watch(
   selectedAnimal,
-  (animal, previousAnimal) => {
+  (animal) => {
     if (!animal) return
 
     selectedAnimalForm.animal_code = animal.animal_code || ''
@@ -398,9 +396,7 @@ watch(
     selectedAnimalForm.health_status = animal.health_status || 'stable'
     selectedAnimalForm.immunization_note = animal.immunization_note || ''
     selectedAnimalForm.notes = animal.notes || ''
-    if (animal.id !== previousAnimal?.id) {
-      historyExpanded.value = false
-    }
+    historyExpanded.value = false
   },
   { immediate: true }
 )
@@ -427,22 +423,7 @@ function normalizeError(error, fallback) {
 }
 
 function historyFieldLabel(fieldName) {
-  const labels = {
-    animal_code: '个体编号',
-    species: '品类',
-    breed: '品种',
-    gender: '性别',
-    birth_date: '出生日期',
-    check_in_date: '入栏日期',
-    weight: '体重',
-    health_status: '健康状态',
-    ear_tag: '耳标号',
-    source: '来源',
-    immunization_note: '免疫记录',
-    notes: '备注',
-    is_active: '启用状态'
-  }
-  return labels[fieldName] || fieldName
+  return fieldName === 'ear_tag' ? '耳标号' : fieldName === 'weight' ? '体重' : fieldName
 }
 
 function toggleHistory() {
@@ -670,15 +651,10 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .animal-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:12px;background:rgba(8,27,32,.72);color:#98b0b5;flex:none;font-size:13px}
 .history-box{margin-top:2px;padding:10px;border-radius:14px;background:rgba(8,27,32,.72)}
-.history-box h4{font-size:18px;line-height:1.3;margin-bottom:10px}
 .detail-scroll{height:100%;overflow:auto;padding-right:4px;align-content:start}
 .records-box{overflow:hidden}
 .records-box .detail-header{align-items:center}
-.history-list{max-height:240px;overflow:auto;padding-right:4px;gap:12px}
-.history-item{display:grid;gap:8px;padding:16px 18px;border:1px solid rgba(164,215,210,.12)}
-.history-field{font-size:17px;line-height:1.35;color:#f1f7f8;font-weight:700}
-.history-change{font-size:16px;line-height:1.6;color:#c6d8dc;word-break:break-word}
-.history-time{font-size:15px;line-height:1.4;color:#8fb0b8}
+.history-list{max-height:220px;overflow:auto;padding-right:4px}
 .inline-actions{flex-wrap:wrap}
 .empty-state{flex:1;display:flex;align-items:center;justify-content:center;padding:18px;border-radius:16px;border:1px dashed rgba(164,215,210,.18);background:rgba(8,27,32,.58);color:#8ea9af;text-align:center}
 .detail-empty{height:100%}
