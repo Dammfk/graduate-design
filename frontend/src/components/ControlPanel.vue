@@ -8,7 +8,7 @@
       <span class="zone-badge">{{ device?.zone_name || '未选择区域' }}</span>
     </div>
 
-    <div v-if="!device" class="empty-state">请先选择设备，再查看控制状态。</div>
+    <div v-if="!device" class="empty-state">请先选择设备，再查看当前状态和控制信息。</div>
 
     <template v-else>
       <div v-if="feedbackSummary" :class="['feedback-banner', feedbackSummary.tone]">
@@ -40,7 +40,11 @@
         </div>
 
         <div class="action-card">
-          <h3>设备组件</h3>
+          <div class="section-title">
+            <h3>设备组件</h3>
+            <small>把设备当前状态和最近命令状态分开看，判断会更直接。</small>
+          </div>
+
           <div class="component-list">
             <article v-for="component in device.components" :key="component.component_key" class="component-card">
               <div class="component-info">
@@ -51,19 +55,21 @@
                   </span>
                 </div>
 
-                <p>
-                  当前状态：
-                  <span :class="['status-text', component.status === 'ON' ? 'on' : 'off']">
-                    {{ component.status === 'ON' ? '开启' : '关闭' }}
-                  </span>
-                </p>
+                <div class="status-stack">
+                  <div class="status-row">
+                    <span class="status-label">当前设备状态</span>
+                    <span :class="['status-pill', component.status === 'ON' ? 'on' : 'off']">
+                      {{ component.status === 'ON' ? '运行中' : '已关闭' }}
+                    </span>
+                  </div>
 
-                <small
-                  v-if="component.last_command_status && !['success', 'idle'].includes(component.last_command_status)"
-                  class="pending-hint"
-                >
-                  设备状态待确认：{{ formatLocalStatus(component.last_command_status) }}
-                </small>
+                  <div class="status-row">
+                    <span class="status-label">最近命令状态</span>
+                    <span :class="['status-pill', mapStatusTone(component.last_command_status)]">
+                      {{ formatRecentCommandStatus(component) }}
+                    </span>
+                  </div>
+                </div>
 
                 <small v-if="feedbackFor(component)" class="command-hint">
                   最近命令：{{ describeFeedback(feedbackFor(component)) }}
@@ -135,14 +141,14 @@ const feedbackSummary = computed(() => {
     return {
       tone: mapStatusTone(status),
       title: `${targetLabel}${commandType}命令已提交`,
-      message: `平台状态：${ctwingStatus}${props.lastFeedback.ctwing_command_id ? ` · 命令ID ${props.lastFeedback.ctwing_command_id}` : ''}`
+      message: `平台状态：${ctwingStatus}${props.lastFeedback.ctwing_command_id ? ` · 命令 ID ${props.lastFeedback.ctwing_command_id}` : ''}`
     }
   }
 
   return {
     tone: mapStatusTone(status),
     title: `${targetLabel}${commandType}命令已提交`,
-    message: `本地状态：${formatLocalStatus(status)}`
+    message: `当前跟踪状态：${formatLocalStatus(status)}`
   }
 })
 
@@ -173,6 +179,13 @@ function formatLocalStatus(status) {
   return '已保存'
 }
 
+function formatRecentCommandStatus(component) {
+  const status = component?.last_command_status
+  if (!status || status === 'idle') return '暂无新命令'
+  if (status === 'pending') return '已保存，等待投递'
+  return formatLocalStatus(status)
+}
+
 function describeFeedback(feedback) {
   if (!feedback) return ''
   if (feedback.error_message) return `失败 · ${feedback.error_message}`
@@ -196,6 +209,8 @@ h2,h3{margin:0;color:#f3f7fa}
 .feedback-banner.failed{background:rgba(255,120,120,.12);border-color:rgba(255,120,120,.24)}
 .control-grid{display:grid;grid-template-columns:240px minmax(0,1fr);gap:12px}
 .snapshot-card,.action-card,.component-card{padding:14px;border-radius:16px;background:rgba(10,33,39,.88);border:1px solid rgba(164,215,210,.1)}
+.section-title{display:grid;gap:4px;margin-bottom:10px}
+.section-title small{color:#8ea9af;font-size:14px;line-height:1.5}
 .env-snapshot{display:grid;gap:10px}
 .env-snapshot.compact{grid-template-columns:repeat(2,minmax(0,1fr))}
 .env-snapshot span{display:block;color:#87a5ac;font-size:13px;margin-bottom:6px}
@@ -206,11 +221,15 @@ h2,h3{margin:0;color:#f3f7fa}
 .component-chip{padding:5px 10px;border-radius:999px;font-size:13px}
 .component-chip.auto{background:rgba(255,200,87,.12);color:#ffe2a4}
 .component-chip.manual{background:rgba(95,211,188,.12);color:#bfece3}
-.component-info p,.component-info small{margin:6px 0 0;color:#97afb4}
-.pending-hint{color:#ffe2a4}
-.status-text.on{color:#9cd8be}
-.status-text.off{color:#c7d5d9}
-.command-hint{display:block;font-size:14px;line-height:1.4}
+.status-stack{display:grid;gap:8px;margin-top:10px}
+.status-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.status-label{color:#97afb4;font-size:14px}
+.status-pill{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 12px;border-radius:999px;font-size:14px}
+.status-pill.on,.status-pill.success{background:rgba(95,211,188,.12);color:#bfece3}
+.status-pill.off{background:rgba(164,215,210,.08);color:#d1dee1}
+.status-pill.pending{background:rgba(255,200,87,.12);color:#ffe2a4}
+.status-pill.failed{background:rgba(255,120,120,.12);color:#ffc2c2}
+.command-hint{display:block;margin-top:10px;font-size:14px;line-height:1.5;color:#97afb4}
 .component-actions{display:flex;gap:8px}
 .ghost-btn,.primary-btn{height:38px;min-width:76px;border-radius:10px;cursor:pointer;font-size:15px}
 .ghost-btn{border:1px solid rgba(164,215,210,.22);background:transparent;color:#d7e8eb}

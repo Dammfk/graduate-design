@@ -38,10 +38,17 @@ function writeCache(payload) {
 }
 
 export const useMonitoringStore = defineStore('monitoring', () => {
+  let noticeTimer = null
   const selectedZone = ref('')
   const selectedDeviceId = ref('')
   const selectedHours = ref(24)
   const selectedArchiveId = ref(null)
+  const notice = reactive({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: ''
+  })
 
   const overview = reactive({
     summary: {
@@ -286,6 +293,30 @@ export const useMonitoringStore = defineStore('monitoring', () => {
 
   hydrateFromCache()
 
+  function clearNotice() {
+    notice.visible = false
+    notice.type = 'info'
+    notice.title = ''
+    notice.message = ''
+    if (noticeTimer) {
+      window.clearTimeout(noticeTimer)
+      noticeTimer = null
+    }
+  }
+
+  function showNotice(type, message, title = '') {
+    notice.visible = true
+    notice.type = type || 'info'
+    notice.title = title || ''
+    notice.message = message || ''
+    if (noticeTimer) {
+      window.clearTimeout(noticeTimer)
+    }
+    noticeTimer = window.setTimeout(() => {
+      clearNotice()
+    }, 2600)
+  }
+
   async function fetchOverview() {
     const response = await telemetryAPI.getOverview()
     if (response.data.status === 'success') {
@@ -419,11 +450,13 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   async function acknowledgeAlarm(alarmId) {
     await alarmAPI.acknowledge(alarmId)
     await Promise.all([fetchAlarms(), fetchRiskDashboard()])
+    showNotice('success', '告警已确认。', '操作已完成')
   }
 
   async function resolveAlarm(alarmId) {
     await alarmAPI.resolve(alarmId)
     await Promise.all([fetchAlarms(), fetchRiskDashboard()])
+    showNotice('success', '告警已标记为已解决。', '操作已完成')
   }
 
   async function updateAlarmSetting(alarmType, payload) {
@@ -432,6 +465,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
       throw new Error('更新预警设置失败')
     }
     await Promise.all([fetchAlarmSettings(), fetchRiskDashboard(), fetchAlarms()])
+    showNotice('success', '预警设置已保存。', '设置已更新')
     return response.data.data
   }
 
@@ -453,6 +487,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
       }
       const mergedResult = mergeLatestCommandFeedback(result.id, result)
       lastControlFeedback.value = mergedResult
+      showNotice('success', '控制命令已提交，页面会继续跟踪执行状态。', '命令已发送')
       trackCommandSettlement(result.id, mergedResult)
       return mergedResult
     } catch (error) {
@@ -463,6 +498,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
         reason,
         error_message: normalizeError(error, 'Control command failed')
       }
+      showNotice('error', normalizeError(error, '控制命令发送失败。'), '发送失败')
       await fetchControlDashboard().catch(() => {})
       throw error
     } finally {
@@ -473,6 +509,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
   async function toggleAutomationRule(ruleId, isEnabled) {
     await controlAPI.updateRule(ruleId, { is_enabled: isEnabled })
     await fetchControlDashboard()
+    showNotice('success', isEnabled ? '策略联动已开启。' : '策略联动已关闭。', '设置已更新')
   }
 
   async function createTask(payload) {
@@ -1012,6 +1049,30 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     return response.data.data
   }
 
+  async function bulkUpdateAnimalProfiles(payload) {
+    const response = await archiveAPI.bulkUpdateAnimals(payload)
+    if (response.data.status !== 'success') throw new Error('批量更新个体档案失败')
+
+    const updatedAnimals = response.data.data.animals || []
+    const updatedMap = new Map(updatedAnimals.map(animal => [animal.id, {
+      ...animal,
+      history_records: animal.history_records || []
+    }]))
+
+    archiveDashboard.archives = archiveDashboard.archives.map(item => {
+      if (item.id !== response.data.data.archive_id) return item
+      return {
+        ...item,
+        animals: (item.animals || []).map(animal => updatedMap.get(animal.id) || animal)
+      }
+    })
+    selectedArchiveId.value = response.data.data.archive_id
+    fetchArchiveDashboard().catch(error => {
+      lastRefreshError.value = normalizeError(error, '批量管理已提交，但档案面板刷新失败，请稍后手动刷新查看。')
+    })
+    return response.data.data
+  }
+
   async function deleteAnimalProfile(animalId) {
     const response = await archiveAPI.deleteAnimal(animalId)
     if (response.data.status !== 'success') throw new Error('删除个体档案失败')
@@ -1133,6 +1194,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     historicalData,
     alarms,
     lastControlFeedback,
+    notice,
     commandInFlightByComponent,
     loading,
     ammoniaAlert,
@@ -1163,6 +1225,8 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     updateAlarmSetting,
     executeControlCommand,
     toggleAutomationRule,
+    showNotice,
+    clearNotice,
     createTask,
     updateTaskStatus,
     updateTask,
@@ -1183,6 +1247,7 @@ export const useMonitoringStore = defineStore('monitoring', () => {
     deleteArchive,
     createAnimalProfile,
     updateAnimalProfile,
+    bulkUpdateAnimalProfiles,
     deleteAnimalProfile,
     loadModule
   }

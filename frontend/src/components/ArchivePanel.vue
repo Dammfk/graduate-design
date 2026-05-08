@@ -1,9 +1,5 @@
 ﻿<template>
   <section class="archive-panel">
-    <div v-if="feedback.message" class="feedback" :class="feedback.type">
-      {{ feedback.message }}
-    </div>
-
     <div class="summary-grid">
       <div><span>批次档案</span><strong>{{ summary.archive_count || 0 }}</strong></div>
       <div><span>活跃批次</span><strong>{{ summary.active_batches || 0 }}</strong></div>
@@ -94,6 +90,24 @@
 
       <section class="workbench-column detail-column">
         <div v-if="selectedArchive" class="detail-scroll">
+          <div class="context-strip">
+            <article class="context-card">
+              <span>当前批次</span>
+              <strong>{{ selectedArchive.batch_number }}</strong>
+              <small>{{ selectedArchive.species }} / {{ selectedArchive.quantity }} 头</small>
+            </article>
+            <article class="context-card">
+              <span>当前个体</span>
+              <strong>{{ selectedAnimal?.animal_code || '未选择个体' }}</strong>
+              <small>{{ selectedAnimal?.ear_tag ? `耳标 ${selectedAnimal.ear_tag}` : '请先在中间列表选择个体' }}</small>
+            </article>
+            <article class="context-card">
+              <span>当前批量作用范围</span>
+              <strong>{{ filteredAnimals.length }} 个个体</strong>
+              <small>{{ animalKeyword ? '基于当前筛选结果生效' : '默认作用于当前批次全部个体' }}</small>
+            </article>
+          </div>
+
           <div class="records-box">
             <div class="detail-header">
               <h3>批次信息</h3>
@@ -127,6 +141,14 @@
             <div class="detail-header">
               <h3>个体详情</h3>
               <div class="inline-actions">
+                <button
+                  class="ghost-btn"
+                  type="button"
+                  :disabled="!filteredAnimals.length"
+                  @click="openBulkModal"
+                >
+                  批量登记
+                </button>
                 <button class="primary-btn" type="button" @click="showAnimalModal = true">新增个体档案</button>
               </div>
             </div>
@@ -151,32 +173,37 @@
                   <option value="stable">稳定</option>
                   <option value="observe">观察</option>
                 </select>
-                <input v-model="selectedAnimalForm.immunization_note" placeholder="免疫记录" />
                 <input v-model="selectedAnimalForm.notes" placeholder="个体备注" />
+              </div>
+
+              <div class="record-section">
+                <div class="record-section-header">
+                  <strong>已有接种记录</strong>
+                  <div class="record-section-actions">
+                    <span>{{ immunizationEntries.length }} 条</span>
+                    <button class="ghost-btn compact-btn" type="button" @click="openImmunizationModal">
+                      新增接种记录
+                    </button>
+                  </div>
+                </div>
+                <div v-if="immunizationEntries.length" class="record-entry-list">
+                  <div v-for="(entry, index) in immunizationEntries" :key="`${selectedAnimal.id}-immunization-${index}`" class="record-entry-card">
+                    {{ entry }}
+                  </div>
+                </div>
+                <p v-else class="record-empty">暂无接种记录。</p>
               </div>
 
               <div class="inline-actions">
                 <button class="ghost-btn" :disabled="busyAnimalId === selectedAnimal.id" @click="submitAnimalEdit">
-                  {{ busyAnimalId === selectedAnimal.id ? '保存中...' : '保存个体修改' }}
+                  {{ busyAnimalId === selectedAnimal.id ? '保存中...' : '保存基础档案' }}
                 </button>
-                <button class="ghost-btn" type="button" @click="toggleHistory">
-                  {{ historyExpanded ? '收起更新记录' : '查看更新记录' }}
+                <button class="ghost-btn" type="button" @click="openHistoryModal">
+                  查看更新记录
                 </button>
                 <button class="danger-btn" :disabled="busyAnimalId === selectedAnimal.id" @click="removeAnimal">
                   {{ busyAnimalId === selectedAnimal.id ? '删除中...' : '删除个体档案' }}
                 </button>
-              </div>
-
-              <div v-if="historyExpanded" class="history-box">
-                <h4>个体更新记录</h4>
-                <div v-if="selectedAnimal.history_records?.length" class="history-list">
-                  <div v-for="record in selectedAnimal.history_records" :key="record.id" class="history-item">
-                    <strong class="history-field">{{ historyFieldLabel(record.field_name) }}</strong>
-                    <span class="history-change">{{ record.old_value || '--' }} -> {{ record.new_value || '--' }}</span>
-                    <small class="history-time">{{ formatDateTime(record.changed_at) }}</small>
-                  </div>
-                </div>
-                <p v-else>暂无个体历史更新记录。</p>
               </div>
             </div>
             <div v-else class="empty-state">
@@ -233,11 +260,118 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showBulkModal" class="modal-mask" @click.self="closeBulkModal">
+      <div class="modal-card">
+        <div class="detail-header">
+          <div>
+            <h3>批量登记</h3>
+            <p class="modal-tip">当前批次 {{ selectedArchive?.batch_number || '--' }}，先勾选本次实际执行该操作的编号，再统一登记。</p>
+          </div>
+          <button class="ghost-btn" type="button" @click="closeBulkModal">取消</button>
+        </div>
+        <div class="bulk-targets">
+          <div class="record-section-header">
+            <strong>作用对象</strong>
+            <div class="record-section-actions">
+              <span>已选 {{ selectedBulkAnimalIds.length }} / {{ filteredAnimals.length }}</span>
+              <button class="ghost-btn compact-btn" type="button" @click="selectAllBulkAnimals">全选</button>
+              <button class="ghost-btn compact-btn" type="button" @click="clearBulkAnimalSelection">清空</button>
+            </div>
+          </div>
+          <div class="bulk-target-list">
+            <label v-for="animal in filteredAnimals" :key="`bulk-${animal.id}`" class="bulk-target-item">
+              <input v-model="selectedBulkAnimalIds" type="checkbox" :value="animal.id" />
+              <span class="bulk-target-code">{{ animal.animal_code }}</span>
+              <small>{{ animal.ear_tag || '未录入耳标' }}</small>
+            </label>
+          </div>
+        </div>
+        <div class="form-grid bulk-form-grid">
+          <input v-model="bulkAnimalForm.action_date" type="date" />
+          <select v-model="bulkAnimalForm.health_status">
+            <option value="">健康状态：不修改</option>
+            <option value="good">健康状态：良好</option>
+            <option value="stable">健康状态：稳定</option>
+            <option value="observe">健康状态：观察</option>
+          </select>
+          <textarea
+            v-model="bulkAnimalForm.immunization_note"
+            class="bulk-textarea compact-textarea"
+            placeholder="批量免疫记录，例如：口蹄疫疫苗第1针"
+          />
+          <textarea
+            v-model="bulkAnimalForm.notes"
+            class="bulk-textarea compact-textarea"
+            placeholder="批量备注，例如：今日统一驱虫或复查"
+          />
+        </div>
+        <div class="inline-actions">
+          <button class="primary-btn" :disabled="submitting.bulkAnimal" @click="submitBulkAnimalUpdate">
+            {{ submitting.bulkAnimal ? '提交中...' : '确认批量登记' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showImmunizationModal" class="modal-mask" @click.self="closeImmunizationModal">
+      <div class="modal-card">
+        <div class="detail-header">
+          <div>
+            <h3>新增接种记录</h3>
+            <p class="modal-tip">当前个体 {{ selectedAnimal?.animal_code || '--' }}，仅追加本次接种内容，不会覆盖已有记录。</p>
+          </div>
+          <button class="ghost-btn" type="button" @click="closeImmunizationModal">取消</button>
+        </div>
+        <textarea
+          v-model="selectedAnimalForm.immunization_note"
+          class="bulk-textarea"
+          placeholder="例如：口蹄疫疫苗第一针"
+        />
+        <div class="inline-actions">
+          <button class="primary-btn" :disabled="busyAnimalId === selectedAnimal?.id" @click="submitAnimalEdit">
+            {{ busyAnimalId === selectedAnimal?.id ? '保存中...' : '确认追加记录' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showHistoryModal" class="modal-mask" @click.self="closeHistoryModal">
+      <div class="modal-card history-modal-card">
+        <div class="detail-header">
+          <div>
+            <h3>个体更新记录</h3>
+            <p class="modal-tip">{{ selectedAnimal?.animal_code || '--' }} 的历史变更记录</p>
+          </div>
+          <button class="ghost-btn" type="button" @click="closeHistoryModal">关闭</button>
+        </div>
+        <div v-if="displayHistoryRecords.length" class="history-list history-list-modal">
+          <div v-for="record in displayHistoryRecords" :key="record.id" class="history-item">
+            <strong class="history-field">{{ historyFieldLabel(record.field_name) }}</strong>
+            <div class="history-change" :class="{ compact: isAppendOnlyHistory(record.field_name) }">
+              <template v-if="isAppendOnlyHistory(record.field_name)">
+                <span class="history-change-label">新增记录</span>
+                <span class="history-change-value">{{ latestAppendOnlyEntry(record.old_value, record.new_value) }}</span>
+              </template>
+              <template v-else>
+                <span>{{ formatHistoryValue(record.field_name, record.old_value) }}</span>
+                <span class="history-arrow">→</span>
+                <span>{{ formatHistoryValue(record.field_name, record.new_value) }}</span>
+              </template>
+            </div>
+            <small class="history-time">{{ formatDateTime(record.changed_at) }}</small>
+          </div>
+        </div>
+        <p v-else class="record-empty">暂无个体历史更新记录。</p>
+      </div>
+    </div>
+
   </section>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { useMonitoringStore } from '../stores/monitoring'
 
 const props = defineProps({
   summary: { type: Object, default: () => ({}) },
@@ -249,13 +383,16 @@ const props = defineProps({
   onDeleteArchive: { type: Function, required: true },
   onCreateAnimal: { type: Function, required: true },
   onUpdateAnimal: { type: Function, required: true },
-  onDeleteAnimal: { type: Function, required: true }
+  onDeleteAnimal: { type: Function, required: true },
+  onBulkUpdateAnimals: { type: Function, required: true }
 })
 
 const emit = defineEmits(['select'])
+const monitoringStore = useMonitoringStore()
 
 const newArchive = reactive({ batch_number: '', species: '', quantity: 1, check_in_date: '' })
 const newAnimal = reactive({ animal_code: '', species: '', breed: '', gender: '', ear_tag: '', weight: null, check_in_date: '', source: '' })
+const bulkAnimalForm = reactive({ action_date: '', health_status: '', immunization_note: '', notes: '' })
 const archiveForm = reactive({
   batch_number: '',
   species: '',
@@ -281,16 +418,18 @@ const selectedAnimalForm = reactive({
 })
 
 const selectedAnimalId = ref(null)
-const historyExpanded = ref(false)
+const selectedBulkAnimalIds = ref([])
 const showArchiveModal = ref(false)
 const showAnimalModal = ref(false)
+const showImmunizationModal = ref(false)
+const showBulkModal = ref(false)
+const showHistoryModal = ref(false)
 const archivePage = ref(1)
 const animalKeyword = ref('')
 const animalPage = ref(1)
 const pageSize = 7
-const submitting = reactive({ archive: false, archiveEdit: false, archiveDelete: false, animal: false })
+const submitting = reactive({ archive: false, archiveEdit: false, archiveDelete: false, animal: false, bulkAnimal: false })
 const busyAnimalId = ref(null)
-const feedback = reactive({ type: '', message: '' })
 
 const healthMap = { stable: '稳定', good: '良好', observe: '观察' }
 
@@ -322,6 +461,24 @@ const pagedAnimals = computed(() => {
 
 const selectedAnimal = computed(() => {
   return filteredAnimals.value.find((animal) => animal.id === selectedAnimalId.value) || pagedAnimals.value[0] || null
+})
+
+const immunizationEntries = computed(() => {
+  return splitAppendOnlyEntries(selectedAnimal.value?.immunization_note).reverse()
+})
+
+const displayHistoryRecords = computed(() => {
+  const records = selectedAnimal.value?.history_records || []
+  const seen = new Set()
+
+  return records.filter((record) => {
+    const signature = `${record.field_name}::${record.old_value || ''}::${record.new_value || ''}`
+    if (seen.has(signature)) {
+      return false
+    }
+    seen.add(signature)
+    return true
+  })
 })
 
 watch(
@@ -366,7 +523,7 @@ watch(
       selectedAnimalId.value = animals[0]?.id ?? null
     }
     if (archive.id !== previousArchive?.id) {
-      historyExpanded.value = false
+      showHistoryModal.value = false
     }
   },
   { immediate: true }
@@ -396,10 +553,12 @@ watch(
     selectedAnimalForm.check_in_date = toDatetimeLocal(animal.check_in_date)
     selectedAnimalForm.source = animal.source || ''
     selectedAnimalForm.health_status = animal.health_status || 'stable'
-    selectedAnimalForm.immunization_note = animal.immunization_note || ''
     selectedAnimalForm.notes = animal.notes || ''
     if (animal.id !== previousAnimal?.id) {
-      historyExpanded.value = false
+      selectedAnimalForm.immunization_note = ''
+      showImmunizationModal.value = false
+      showBulkModal.value = false
+      showHistoryModal.value = false
     }
   },
   { immediate: true }
@@ -418,8 +577,10 @@ function formatDateTime(value) {
 }
 
 function setFeedback(type, message) {
-  feedback.type = type
-  feedback.message = message
+  if (!message) return
+  const tone = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info'
+  const title = type === 'error' ? '操作失败' : type === 'success' ? '操作成功' : '提示'
+  monitoringStore.showNotice(tone, message, title)
 }
 
 function normalizeError(error, fallback) {
@@ -445,8 +606,122 @@ function historyFieldLabel(fieldName) {
   return labels[fieldName] || fieldName
 }
 
-function toggleHistory() {
-  historyExpanded.value = !historyExpanded.value
+function isAppendOnlyHistory(fieldName) {
+  return fieldName === 'immunization_note' || fieldName === 'notes'
+}
+
+function extractAppendedHistory(oldValue, newValue) {
+  const oldText = oldValue ? String(oldValue).trim() : ''
+  const newText = newValue ? String(newValue).trim() : ''
+  if (!newText) return '--'
+  if (!oldText) return newText
+  if (newText.startsWith(oldText)) {
+    const appended = newText.slice(oldText.length).trim()
+    return normalizeAppendOnlyText(appended || newText)
+  }
+  return normalizeAppendOnlyText(newText)
+}
+
+function normalizeAppendOnlyText(value) {
+  return String(value)
+    .replace(/(?<!^)(?=\d{4}-\d{2}-\d{2}(?:[：:\s]|$))/g, '\n')
+    .trim()
+}
+
+function splitAppendOnlyEntries(value) {
+  const normalized = normalizeAppendOnlyText(value || '')
+  if (!normalized) return []
+  return normalized
+    .split('\n')
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function latestAppendOnlyEntry(oldValue, newValue) {
+  const normalized = extractAppendedHistory(oldValue, newValue)
+  const entries = splitAppendOnlyEntries(normalized)
+
+  return entries.at(-1) || normalized || '--'
+}
+
+function formatHistoryValue(fieldName, value) {
+  if (value === null || value === undefined || value === '') {
+    return '--'
+  }
+
+  if (fieldName === 'weight') {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue) ? `${numericValue} kg` : String(value)
+  }
+
+  if (fieldName === 'is_active') {
+    if (value === true || value === 'True' || value === 'true' || value === '1') return '启用'
+    if (value === false || value === 'False' || value === 'false' || value === '0') return '停用'
+  }
+
+  if (fieldName === 'health_status') {
+    return formatHealth(value)
+  }
+
+  if (fieldName === 'immunization_note' || fieldName === 'notes') {
+    return normalizeAppendOnlyText(value)
+  }
+
+  if (fieldName === 'birth_date' || fieldName === 'check_in_date') {
+    const parsedDate = new Date(value)
+    return Number.isNaN(parsedDate.getTime()) ? String(value) : formatDateTime(parsedDate)
+  }
+
+  return String(value)
+}
+
+function openHistoryModal() {
+  showHistoryModal.value = true
+}
+
+function closeHistoryModal() {
+  showHistoryModal.value = false
+}
+
+function openImmunizationModal() {
+  selectedAnimalForm.immunization_note = ''
+  showImmunizationModal.value = true
+}
+
+function closeImmunizationModal() {
+  showImmunizationModal.value = false
+  selectedAnimalForm.immunization_note = ''
+}
+
+function resetBulkForm() {
+  bulkAnimalForm.action_date = new Date().toISOString().slice(0, 10)
+  bulkAnimalForm.health_status = ''
+  bulkAnimalForm.immunization_note = ''
+  bulkAnimalForm.notes = ''
+  selectedBulkAnimalIds.value = []
+}
+
+function selectAllBulkAnimals() {
+  selectedBulkAnimalIds.value = filteredAnimals.value.map(item => item.id)
+}
+
+function clearBulkAnimalSelection() {
+  selectedBulkAnimalIds.value = []
+}
+
+function openBulkModal() {
+  if (!filteredAnimals.value.length) {
+    setFeedback('error', '当前筛选结果中没有可批量处理的个体。')
+    return
+  }
+  resetBulkForm()
+  selectAllBulkAnimals()
+  showBulkModal.value = true
+}
+
+function closeBulkModal() {
+  showBulkModal.value = false
+  resetBulkForm()
 }
 
 function toDatetimeLocal(value) {
@@ -517,7 +792,6 @@ async function removeArchive() {
   try {
     await props.onDeleteArchive(props.selectedArchiveId)
     selectedAnimalId.value = null
-    historyExpanded.value = false
     setFeedback('success', '批次档案已删除。')
   } catch (error) {
     setFeedback('error', normalizeError(error, '批次档案删除失败。'))
@@ -587,11 +861,53 @@ async function submitAnimalEdit() {
       immunization_note: selectedAnimalForm.immunization_note || null,
       notes: selectedAnimalForm.notes || null
     })
+    if (selectedAnimalForm.immunization_note?.trim()) {
+      closeImmunizationModal()
+    }
     setFeedback('success', '个体档案已更新。')
   } catch (error) {
     setFeedback('error', normalizeError(error, '个体档案更新失败。'))
   } finally {
     busyAnimalId.value = null
+  }
+}
+
+async function submitBulkAnimalUpdate() {
+  if (!props.selectedArchiveId) {
+    setFeedback('error', '请先选择批次后再进行批量管理。')
+    return
+  }
+  if (!filteredAnimals.value.length) {
+    setFeedback('error', '当前筛选结果中没有可批量处理的个体。')
+    return
+  }
+  if (!selectedBulkAnimalIds.value.length) {
+    setFeedback('error', '请先勾选本次实际执行该操作的个体编号。')
+    return
+  }
+  if (!bulkAnimalForm.health_status && !bulkAnimalForm.immunization_note.trim() && !bulkAnimalForm.notes.trim()) {
+    setFeedback('error', '请至少填写一项批量更新内容。')
+    return
+  }
+
+  submitting.bulkAnimal = true
+  setFeedback('', '')
+  try {
+    const selectedCount = selectedBulkAnimalIds.value.length
+    const result = await props.onBulkUpdateAnimals({
+      archive_id: props.selectedArchiveId,
+      animal_ids: selectedBulkAnimalIds.value,
+      action_date: bulkAnimalForm.action_date ? new Date(`${bulkAnimalForm.action_date}T00:00:00`).toISOString() : null,
+      health_status: bulkAnimalForm.health_status || null,
+      immunization_note: bulkAnimalForm.immunization_note.trim() || null,
+      notes: bulkAnimalForm.notes.trim() || null
+    })
+    closeBulkModal()
+    setFeedback('success', `已批量更新 ${result.updated_count || selectedCount} 个个体档案。`)
+  } catch (error) {
+    setFeedback('error', normalizeError(error, '批量更新个体档案失败。'))
+  } finally {
+    submitting.bulkAnimal = false
   }
 }
 
@@ -602,7 +918,6 @@ async function removeAnimal() {
   setFeedback('', '')
   try {
     await props.onDeleteAnimal(selectedAnimal.value.id)
-    historyExpanded.value = false
     setFeedback('success', '个体档案已删除。')
   } catch (error) {
     setFeedback('error', normalizeError(error, '个体档案删除失败。'))
@@ -616,15 +931,17 @@ async function removeAnimal() {
 .archive-panel{display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;overflow:hidden}
 .detail-header,.inline-actions,.archive-top,.animal-top,.animal-meta{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
 h2,h3,h4{margin:0;color:#f3f7fa}
-.feedback{padding:10px 12px;border-radius:12px;font-size:13px;flex:none}
-.feedback.success{background:rgba(79,169,143,.18);color:#c8f0e6}
-.feedback.error{background:rgba(255,107,107,.16);color:#ffd3d3}
 .summary-grid,.form-grid,.animal-form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .summary-grid{flex:none}
 .summary-grid div,.records-box,.archive-card,.animal-selector-card,.history-item{padding:14px;border-radius:16px;background:rgba(10,33,39,.88)}
 .summary-grid div{padding:10px 12px;border-radius:14px}
 .summary-grid span{display:block;color:#87a5ac;font-size:11px;margin-bottom:4px}
 .summary-grid strong{font-size:18px;line-height:1}
+.context-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.context-card{padding:12px 14px;border-radius:16px;background:rgba(8,27,32,.72);border:1px solid rgba(164,215,210,.12)}
+.context-card span{display:block;color:#87a5ac;font-size:13px;margin-bottom:6px}
+.context-card strong{display:block;font-size:18px;line-height:1.35;color:#f1f7f8}
+.context-card small{display:block;margin-top:4px;color:#98b0b5;font-size:14px;line-height:1.5}
 .search-field{display:grid;gap:8px}
 .search-field label{font-size:13px;color:#87a5ac}
 .form-grid input,.form-grid select,.animal-form-grid input,.animal-form-grid select,.search-field input{height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);background:rgba(12,43,49,.94);color:#eff7f8}
@@ -669,21 +986,47 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .animal-editor{display:grid;gap:10px;padding:12px;border-radius:16px;background:rgba(8,27,32,.72);min-width:0}
 .animal-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:12px;background:rgba(8,27,32,.72);color:#98b0b5;flex:none;font-size:13px}
-.history-box{margin-top:2px;padding:10px;border-radius:14px;background:rgba(8,27,32,.72)}
-.history-box h4{font-size:18px;line-height:1.3;margin-bottom:10px}
 .detail-scroll{height:100%;overflow:auto;padding-right:4px;align-content:start}
 .records-box{overflow:hidden}
 .records-box .detail-header{align-items:center}
-.history-list{max-height:240px;overflow:auto;padding-right:4px;gap:12px}
-.history-item{display:grid;gap:8px;padding:16px 18px;border:1px solid rgba(164,215,210,.12)}
-.history-field{font-size:17px;line-height:1.35;color:#f1f7f8;font-weight:700}
-.history-change{font-size:16px;line-height:1.6;color:#c6d8dc;word-break:break-word}
-.history-time{font-size:15px;line-height:1.4;color:#8fb0b8}
+.record-section{display:grid;gap:10px;padding:14px 16px;border-radius:16px;background:rgba(8,27,32,.72)}
+.record-section-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.record-section-header strong{font-size:17px;line-height:1.35;color:#f1f7f8}
+.record-section-header span{font-size:14px;line-height:1.4;color:#8fb0b8}
+.record-section-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.record-entry-list{display:grid;gap:10px}
+.record-entry-card{padding:12px 14px;border-radius:14px;border:1px solid rgba(164,215,210,.12);background:rgba(10,33,39,.88);font-size:16px;line-height:1.7;color:#d7e5e8;word-break:break-word}
+.record-empty{margin:0;font-size:15px;line-height:1.6;color:#8ea9af}
+.immunization-editor{display:grid;gap:8px;margin-top:12px}
+.bulk-inline-editor{display:grid;gap:12px;margin-top:12px}
+.compact-btn{height:32px;padding:0 12px;border-radius:10px;font-size:13px}
+.compact-textarea{min-height:88px}
+.record-tip{color:#8ea9af;font-size:13px;line-height:1.5}
+.history-list{max-height:260px;overflow:auto;padding-right:4px;gap:14px}
+.history-list-modal{max-height:min(62vh,680px);padding-right:8px}
+.history-modal-card{width:min(860px,100%)}
+.history-item{display:grid;gap:10px;padding:18px 20px;border:1px solid rgba(164,215,210,.12)}
+.history-field{font-size:18px;line-height:1.35;color:#f1f7f8;font-weight:700}
+.history-change{font-size:17px;line-height:1.75;color:#d3e1e4;word-break:break-word;display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.history-change.compact{display:grid;gap:6px}
+.history-change-label{font-size:14px;line-height:1.3;color:#8fb0b8;letter-spacing:.08em;text-transform:uppercase}
+.history-change-value{font-size:17px;line-height:1.7;color:#dce8ea;white-space:pre-wrap}
+.history-arrow{display:inline-block;margin:0 8px;color:#9ac8bf;font-weight:700}
+.history-time{font-size:15px;line-height:1.5;color:#8fb0b8}
 .inline-actions{flex-wrap:wrap}
 .empty-state{flex:1;display:flex;align-items:center;justify-content:center;padding:18px;border-radius:16px;border:1px dashed rgba(164,215,210,.18);background:rgba(8,27,32,.58);color:#8ea9af;text-align:center}
 .detail-empty{height:100%}
 .modal-mask{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(2,10,13,.66);backdrop-filter:blur(8px);z-index:30}
 .modal-card{width:min(760px,100%);display:grid;gap:16px;padding:22px;border-radius:24px;background:rgba(9,27,32,.98);border:1px solid rgba(176,224,221,.14);box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.modal-tip{margin:8px 0 0;color:#90afb5;font-size:14px;line-height:1.5}
+.bulk-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.bulk-targets{display:grid;gap:10px;padding:14px 16px;border-radius:16px;background:rgba(8,27,32,.72)}
+.bulk-target-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-height:220px;overflow:auto;padding-right:4px}
+.bulk-target-item{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border:1px solid rgba(164,215,210,.12);background:rgba(10,33,39,.88);cursor:pointer}
+.bulk-target-item input{width:16px;height:16px;margin:0}
+.bulk-target-code{font-size:15px;color:#eef7f7;line-height:1.4}
+.bulk-target-item small{grid-column:2;color:#8ea9af;font-size:13px;line-height:1.4}
+.bulk-textarea{min-height:110px;padding:12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);background:rgba(12,43,49,.94);color:#eff7f8;resize:vertical}
 .primary-btn,.ghost-btn,.danger-btn{height:36px;padding:0 14px;border-radius:12px;cursor:pointer}
 .primary-btn{border:none;background:linear-gradient(135deg,#4fa98f,#2f7f6d);color:#fff}
 .ghost-btn{border:1px solid rgba(164,215,210,.18);background:transparent;color:#eaf3f5}
@@ -691,10 +1034,12 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .primary-btn:disabled,.ghost-btn:disabled,.danger-btn:disabled{opacity:.6;cursor:not-allowed}
 @media (max-width:1200px){
   .summary-grid,.form-grid,.animal-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .context-strip{grid-template-columns:1fr}
   .archive-workbench{grid-template-columns:1fr;height:auto;min-height:auto}
   .workbench-column{min-height:420px}
 }
 @media (max-width:720px){
   .summary-grid,.form-grid,.animal-form-grid{grid-template-columns:1fr}
+  .bulk-target-list{grid-template-columns:1fr}
 }
 </style>

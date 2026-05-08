@@ -51,6 +51,13 @@
         {{ activeError }}
       </section>
 
+      <transition name="notice-fade">
+        <section v-if="monitoringStore.notice.visible" class="global-notice" :class="monitoringStore.notice.type">
+          <strong v-if="monitoringStore.notice.title">{{ monitoringStore.notice.title }}</strong>
+          <span>{{ monitoringStore.notice.message }}</span>
+        </section>
+      </transition>
+
       <main class="page-body">
         <component :is="currentRoute.component" :navigate="navigate" />
       </main>
@@ -372,6 +379,60 @@ input {
 
 .page-body {
   min-height: calc(100vh - 160px);
+}
+
+.global-notice {
+  position: fixed;
+  top: 22px;
+  right: 28px;
+  z-index: 1200;
+  min-width: 280px;
+  max-width: 420px;
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.global-notice strong {
+  font-size: 15px;
+  color: #f5fbfc;
+}
+
+.global-notice span {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.global-notice.info {
+  background: rgba(19, 54, 62, 0.94);
+  color: #d6ebef;
+}
+
+.global-notice.success {
+  background: rgba(18, 70, 60, 0.95);
+  border-color: rgba(95, 211, 188, 0.32);
+  color: #d5f4ec;
+}
+
+.global-notice.error {
+  background: rgba(78, 28, 32, 0.95);
+  border-color: rgba(255, 133, 127, 0.32);
+  color: #ffd8d5;
+}
+
+.notice-fade-enter-active,
+.notice-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.notice-fade-enter-from,
+.notice-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 .page-grid {

@@ -132,6 +132,12 @@ export const archiveAPI = {
     return api.put(`/archives/animals/${animalId}`, data)
   },
 
+  bulkUpdateAnimals(data) {
+    return api.put('/archives/animals/bulk-update', data, {
+      timeout: 30000
+    })
+  },
+
   deleteAnimal(animalId) {
     return api.delete(`/archives/animals/${animalId}`)
   }

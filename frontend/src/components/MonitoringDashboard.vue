@@ -124,6 +124,7 @@
             :selected-archive="monitoringStore.selectedArchive"
             :on-create-archive="handleCreateArchive"
             :on-create-animal="handleCreateAnimal"
+            :on-bulk-update-animals="handleBulkUpdateAnimals"
             @select="monitoringStore.selectedArchiveId = $event"
           />
         </div>
@@ -220,6 +221,10 @@ async function handleCreateArchive(payload) {
 
 async function handleCreateAnimal(payload) {
   await monitoringStore.createAnimalProfile(payload)
+}
+
+async function handleBulkUpdateAnimals(payload) {
+  await monitoringStore.bulkUpdateAnimalProfiles(payload)
 }
 
 async function handleCreateTask(payload) {

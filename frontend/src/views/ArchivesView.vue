@@ -11,6 +11,7 @@
         :on-delete-archive="handleDeleteArchive"
         :on-create-animal="handleCreateAnimal"
         :on-update-animal="handleUpdateAnimal"
+        :on-bulk-update-animals="handleBulkUpdateAnimals"
         :on-delete-animal="handleDeleteAnimal"
         @select="monitoringStore.selectedArchiveId = $event"
       />
@@ -42,6 +43,10 @@ async function handleCreateAnimal(payload) {
 
 async function handleUpdateAnimal(animalId, payload) {
   await monitoringStore.updateAnimalProfile(animalId, payload)
+}
+
+async function handleBulkUpdateAnimals(payload) {
+  await monitoringStore.bulkUpdateAnimalProfiles(payload)
 }
 
 async function handleDeleteAnimal(animalId) {

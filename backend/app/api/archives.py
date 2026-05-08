@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas import AnimalProfileCreate, AnimalProfileUpdate, LivestockArchiveCreate, LivestockArchiveUpdate
+from app.schemas import AnimalProfileBulkUpdate, AnimalProfileCreate, AnimalProfileUpdate, LivestockArchiveCreate, LivestockArchiveUpdate
 from app.services import ArchiveService
 
 router = APIRouter(prefix="/api/v1/archives", tags=["archives"])
@@ -103,6 +103,28 @@ async def create_animal_profile(payload: AnimalProfileCreate, db: Session = Depe
             notes=payload.notes,
         )
         return {"status": "success", "message": "Animal profile created", "data": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.put("/animals/bulk-update")
+async def bulk_update_animal_profiles(
+    payload: AnimalProfileBulkUpdate,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = ArchiveService.bulk_update_animal_profiles(
+            db=db,
+            archive_id=payload.archive_id,
+            animal_ids=payload.animal_ids,
+            action_date=payload.action_date,
+            health_status=payload.health_status,
+            immunization_note=payload.immunization_note,
+            notes=payload.notes,
+        )
+        return {"status": "success", "message": "Animal profiles bulk updated", "data": result}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:

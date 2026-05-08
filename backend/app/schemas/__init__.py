@@ -256,6 +256,15 @@ class AnimalProfileCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class AnimalProfileBulkUpdate(BaseModel):
+    archive_id: int
+    animal_ids: Optional[list[int]] = None
+    action_date: Optional[datetime] = None
+    health_status: Optional[str] = None
+    immunization_note: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class ProductionTaskCreate(BaseModel):
     title: str = Field(..., max_length=100)
     category: str = Field(..., max_length=50)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, selectinload
 
@@ -20,6 +20,49 @@ class ArchiveService:
             return json.loads(raw_value)
         except Exception:
             return {"vaccines": [], "last_date": None, "raw": raw_value}
+
+    @staticmethod
+    def _format_history_value(value) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            normalized_value = ArchiveService._normalize_datetime_value(value)
+            return to_display_iso(normalized_value)
+        return str(value)
+
+    @staticmethod
+    def _normalize_datetime_value(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(microsecond=0)
+        return value.astimezone(UTC).replace(tzinfo=None, microsecond=0)
+
+    @staticmethod
+    def _build_history_record(animal_id: int, field_name: str, old_value, new_value) -> AnimalProfileHistory | None:
+        if old_value == new_value:
+            return None
+        return AnimalProfileHistory(
+            animal_id=animal_id,
+            field_name=field_name,
+            old_value=ArchiveService._format_history_value(old_value),
+            new_value=ArchiveService._format_history_value(new_value),
+            changed_at=datetime.utcnow(),
+            created_at=datetime.utcnow(),
+        )
+
+    @staticmethod
+    def _merge_text_record(original: str | None, incoming: str | None, action_date: datetime | None = None) -> str | None:
+        if incoming is None:
+            return original
+        cleaned = incoming.strip()
+        if not cleaned:
+            return original
+        prefix = action_date.strftime("%Y-%m-%d") if action_date else datetime.utcnow().strftime("%Y-%m-%d")
+        new_line = f"{prefix}: {cleaned}"
+        if not original or not original.strip():
+            return new_line
+        return f"{original.strip()}\n{new_line}"
 
     @staticmethod
     def _serialize_animal(animal: AnimalProfile) -> dict:
@@ -243,10 +286,12 @@ class ArchiveService:
         immunization_note: str | None = None,
         notes: str | None = None,
     ) -> dict:
-        ArchiveService._get_archive_or_raise(db, archive_id)
+        archive = ArchiveService._get_archive_or_raise(db, archive_id)
         existing = db.query(AnimalProfile).filter(AnimalProfile.animal_code == animal_code).first()
         if existing:
             raise ValueError(f"Animal code already exists: {animal_code}")
+        if species.strip() != archive.species.strip():
+            raise ValueError(f"Animal species '{species}' does not match archive species '{archive.species}'")
 
         animal = AnimalProfile(
             archive_id=archive_id,
@@ -254,8 +299,8 @@ class ArchiveService:
             species=species,
             breed=breed,
             gender=gender,
-            birth_date=birth_date,
-            check_in_date=check_in_date or datetime.utcnow(),
+            birth_date=ArchiveService._normalize_datetime_value(birth_date),
+            check_in_date=ArchiveService._normalize_datetime_value(check_in_date) or datetime.utcnow(),
             weight=weight,
             health_status=health_status or "stable",
             ear_tag=ear_tag,
@@ -290,21 +335,13 @@ class ArchiveService:
         is_active: bool | None = None,
     ) -> dict:
         animal = ArchiveService._get_animal_or_raise(db, animal_id)
+        archive = ArchiveService._get_archive_or_raise(db, animal.archive_id)
         history_records: list[AnimalProfileHistory] = []
 
         def append_history(field_name: str, old_value, new_value) -> None:
-            if old_value == new_value:
-                return
-            history_records.append(
-                AnimalProfileHistory(
-                    animal_id=animal.id,
-                    field_name=field_name,
-                    old_value=str(old_value) if old_value is not None else None,
-                    new_value=str(new_value) if new_value is not None else None,
-                    changed_at=datetime.utcnow(),
-                    created_at=datetime.utcnow(),
-                )
-            )
+            record = ArchiveService._build_history_record(animal.id, field_name, old_value, new_value)
+            if record:
+                history_records.append(record)
 
         if animal_code is not None and animal_code != animal.animal_code:
             existing = db.query(AnimalProfile).filter(AnimalProfile.animal_code == animal_code).first()
@@ -313,6 +350,8 @@ class ArchiveService:
             append_history("animal_code", animal.animal_code, animal_code)
             animal.animal_code = animal_code
         if species is not None:
+            if species.strip() != archive.species.strip():
+                raise ValueError(f"Animal species '{species}' does not match archive species '{archive.species}'")
             append_history("species", animal.species, species)
             animal.species = species
         if breed is not None:
@@ -322,11 +361,13 @@ class ArchiveService:
             append_history("gender", animal.gender, gender)
             animal.gender = gender
         if birth_date is not None:
-            append_history("birth_date", animal.birth_date, birth_date)
-            animal.birth_date = birth_date
+            normalized_birth_date = ArchiveService._normalize_datetime_value(birth_date)
+            append_history("birth_date", animal.birth_date, normalized_birth_date)
+            animal.birth_date = normalized_birth_date
         if check_in_date is not None:
-            append_history("check_in_date", animal.check_in_date, check_in_date)
-            animal.check_in_date = check_in_date
+            normalized_check_in_date = ArchiveService._normalize_datetime_value(check_in_date)
+            append_history("check_in_date", animal.check_in_date, normalized_check_in_date)
+            animal.check_in_date = normalized_check_in_date
         if weight is not None:
             append_history("weight", animal.weight, weight)
             animal.weight = weight
@@ -339,9 +380,10 @@ class ArchiveService:
         if source is not None:
             append_history("source", animal.source, source)
             animal.source = source
-        if immunization_note is not None:
-            append_history("immunization_note", animal.immunization_note, immunization_note)
-            animal.immunization_note = immunization_note
+        if immunization_note is not None and immunization_note.strip():
+            merged_immunization = ArchiveService._merge_text_record(animal.immunization_note, immunization_note)
+            append_history("immunization_note", animal.immunization_note, merged_immunization)
+            animal.immunization_note = merged_immunization
         if notes is not None:
             append_history("notes", animal.notes, notes)
             animal.notes = notes
@@ -361,6 +403,87 @@ class ArchiveService:
             .first()
         )
         return ArchiveService._serialize_animal(animal)
+
+    @staticmethod
+    def bulk_update_animal_profiles(
+        db: Session,
+        archive_id: int,
+        animal_ids: list[int] | None = None,
+        action_date: datetime | None = None,
+        health_status: str | None = None,
+        immunization_note: str | None = None,
+        notes: str | None = None,
+    ) -> dict:
+        ArchiveService._get_archive_or_raise(db, archive_id)
+        if health_status is None and not (immunization_note and immunization_note.strip()) and not (notes and notes.strip()):
+            raise ValueError("At least one bulk update field is required")
+
+        query = db.query(AnimalProfile).filter(
+            AnimalProfile.archive_id == archive_id,
+            AnimalProfile.is_active == True,  # noqa: E712
+        )
+        if animal_ids:
+            query = query.filter(AnimalProfile.id.in_(animal_ids))
+
+        animals = query.options(selectinload(AnimalProfile.history_records)).all()
+        if not animals:
+            raise ValueError("No matching animal profiles found for bulk update")
+
+        history_records: list[AnimalProfileHistory] = []
+        updated_animals: list[AnimalProfile] = []
+
+        for animal in animals:
+            changed = False
+
+            if health_status is not None and animal.health_status != health_status:
+                record = ArchiveService._build_history_record(animal.id, "health_status", animal.health_status, health_status)
+                if record:
+                    history_records.append(record)
+                animal.health_status = health_status
+                changed = True
+
+            if immunization_note is not None and immunization_note.strip():
+                merged_immunization = ArchiveService._merge_text_record(animal.immunization_note, immunization_note, action_date)
+                if merged_immunization != animal.immunization_note:
+                    record = ArchiveService._build_history_record(animal.id, "immunization_note", animal.immunization_note, merged_immunization)
+                    if record:
+                        history_records.append(record)
+                    animal.immunization_note = merged_immunization
+                    changed = True
+
+            if notes is not None and notes.strip():
+                merged_notes = ArchiveService._merge_text_record(animal.notes, notes, action_date)
+                if merged_notes != animal.notes:
+                    record = ArchiveService._build_history_record(animal.id, "notes", animal.notes, merged_notes)
+                    if record:
+                        history_records.append(record)
+                    animal.notes = merged_notes
+                    changed = True
+
+            if changed:
+                animal.updated_at = datetime.utcnow()
+                updated_animals.append(animal)
+
+        if not updated_animals:
+            raise ValueError("No animal profiles changed during bulk update")
+
+        if history_records:
+            db.add_all(history_records)
+        db.commit()
+
+        refreshed_animals = (
+            db.query(AnimalProfile)
+            .options(selectinload(AnimalProfile.history_records))
+            .filter(AnimalProfile.id.in_([animal.id for animal in updated_animals]))
+            .all()
+        )
+
+        return {
+            "archive_id": archive_id,
+            "updated_count": len(refreshed_animals),
+            "animal_ids": [animal.id for animal in refreshed_animals],
+            "animals": [ArchiveService._serialize_animal(animal) for animal in refreshed_animals],
+        }
 
     @staticmethod
     def delete_animal_profile(db: Session, animal_id: int) -> dict:
