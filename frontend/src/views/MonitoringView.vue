@@ -20,6 +20,7 @@
             <h3>{{ monitoringStore.currentZone?.zone_name || '未选择区域' }}</h3>
           </div>
         </div>
+
         <div class="zone-metrics">
           <div>
             <span>在线设备</span>
@@ -30,7 +31,8 @@
             <strong>{{ monitoringStore.currentZone?.offline_count ?? 0 }}</strong>
           </div>
         </div>
-        <div class="device-list">
+
+        <div v-if="monitoringStore.currentZoneDevices.length" class="device-list">
           <button
             v-for="device in monitoringStore.currentZoneDevices"
             :key="device.device_id"
@@ -46,14 +48,35 @@
             <span>{{ device.device_id }}</span>
           </button>
         </div>
+        <div v-else class="inline-empty-state">
+          <strong>当前区域还没有可展示的设备</strong>
+          <span>可以先切换到其他区域，或等待设备完成上报后再查看实时数据。</span>
+        </div>
       </aside>
 
-      <div class="page-grid">
+      <div class="page-grid content-stack">
         <section class="page-panel">
-          <EnvironmentDashboard :data="monitoringStore.currentMetrics" />
+          <template v-if="monitoringStore.selectedDeviceId">
+            <EnvironmentDashboard :data="monitoringStore.currentMetrics" />
+          </template>
+          <div v-else class="panel-empty-state">
+            <strong>还没有选中设备</strong>
+            <span>先从左侧设备列表里选择一台设备，再查看最新环境指标。</span>
+          </div>
         </section>
+
         <section class="page-panel">
-          <TrendChart :title="`${monitoringStore.currentDevice?.device_name || '当前设备'} 历史趋势`" :data="monitoringStore.historicalData" />
+          <template v-if="monitoringStore.selectedDeviceId && monitoringStore.historicalData.length">
+            <TrendChart :title="`${monitoringStore.currentDevice?.device_name || '当前设备'} 历史趋势`" :data="monitoringStore.historicalData" />
+          </template>
+          <div v-else class="panel-empty-state">
+            <strong>{{ monitoringStore.selectedDeviceId ? '暂时没有历史数据' : '历史趋势暂未就绪' }}</strong>
+            <span>
+              {{ monitoringStore.selectedDeviceId
+                ? '可以等待设备继续上报，或缩短时间范围后再查看趋势。'
+                : '先选择一台设备，历史曲线会跟着设备和时间范围一起刷新。' }}
+            </span>
+          </div>
         </section>
       </div>
     </section>
@@ -71,9 +94,7 @@ const monitoringStore = useMonitoringStore()
 async function handleZoneChange(zoneName) {
   monitoringStore.selectedZone = zoneName
   const firstDevice = monitoringStore.currentZoneDevices[0]
-  if (firstDevice) {
-    monitoringStore.selectedDeviceId = firstDevice.device_id
-  }
+  monitoringStore.selectedDeviceId = firstDevice ? firstDevice.device_id : ''
   await monitoringStore.loadModule('monitoring')
 }
 
@@ -110,8 +131,7 @@ async function handleHoursChange(hours) {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(10, 33, 39, 0.94), rgba(7, 23, 28, 0.94));
+  background: linear-gradient(180deg, rgba(10, 33, 39, 0.94), rgba(7, 23, 28, 0.94));
 }
 
 .zone-metrics {
@@ -155,18 +175,17 @@ async function handleHoursChange(hours) {
   font-size: 20px;
 }
 
-.monitoring-layout > .page-grid {
+.content-stack {
   height: 100%;
   min-height: 0;
   grid-template-rows: minmax(360px, 1.05fr) minmax(0, 1fr);
   overflow: hidden;
 }
 
-.monitoring-layout > .page-grid > .page-panel {
+.content-stack > .page-panel {
   min-height: 0;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(10, 33, 39, 0.94), rgba(7, 23, 28, 0.94));
+  background: linear-gradient(180deg, rgba(10, 33, 39, 0.94), rgba(7, 23, 28, 0.94));
 }
 
 .device-list {
@@ -240,6 +259,50 @@ async function handleHoursChange(hours) {
   box-shadow: 0 0 0 4px rgba(103, 213, 170, 0.08);
 }
 
+.inline-empty-state,
+.panel-empty-state {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  justify-items: start;
+  min-height: 180px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px dashed rgba(164, 215, 210, 0.16);
+  background: rgba(9, 29, 35, 0.74);
+}
+
+.inline-empty-state strong,
+.panel-empty-state strong {
+  font-size: 17px;
+  color: #eef7f7;
+}
+
+.inline-empty-state span,
+.panel-empty-state span {
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+@media (max-width: 1350px) {
+  .page-grid {
+    height: auto;
+    min-height: auto;
+    max-height: none;
+  }
+
+  .monitoring-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+
+  .content-stack {
+    height: auto;
+    overflow: visible;
+  }
+}
+
 @media (max-width: 1100px) {
   .page-grid {
     height: auto;
@@ -253,7 +316,7 @@ async function handleHoursChange(hours) {
     overflow: visible;
   }
 
-  .monitoring-layout > .page-grid {
+  .content-stack {
     height: auto;
     grid-template-rows: auto;
     overflow: visible;

@@ -16,6 +16,19 @@
         <span>{{ feedbackSummary.message }}</span>
       </div>
 
+      <div class="context-hints">
+        <article class="context-hint">
+          <span>设备活跃状态</span>
+          <strong :class="deviceActivity.tone">{{ deviceActivity.label }}</strong>
+          <small>{{ deviceActivity.hint }}</small>
+        </article>
+        <article class="context-hint">
+          <span>平台投递提示</span>
+          <strong>{{ deliveryHint.title }}</strong>
+          <small>{{ deliveryHint.message }}</small>
+        </article>
+      </div>
+
       <div class="control-grid">
         <div class="snapshot-card">
           <h3>环境快照</h3>
@@ -42,7 +55,7 @@
         <div class="action-card">
           <div class="section-title">
             <h3>设备组件</h3>
-            <small>把设备当前状态和最近命令状态分开看，判断会更直接。</small>
+            <small>把设备当前状态和最近命令状态分开看，再结合流程时间线判断命令卡在哪一步。</small>
           </div>
 
           <div class="component-list">
@@ -74,6 +87,18 @@
                 <small v-if="feedbackFor(component)" class="command-hint">
                   最近命令：{{ describeFeedback(feedbackFor(component)) }}
                 </small>
+
+                <div class="timeline">
+                  <div
+                    v-for="step in commandTimeline(component)"
+                    :key="`${component.component_key}-${step.key}`"
+                    class="timeline-step"
+                    :class="step.state"
+                  >
+                    <span class="timeline-dot"></span>
+                    <strong>{{ step.label }}</strong>
+                  </div>
+                </div>
               </div>
 
               <div class="component-actions">
@@ -152,6 +177,76 @@ const feedbackSummary = computed(() => {
   }
 })
 
+const deviceActivity = computed(() => {
+  const recordedAt = props.device?.latest_environment?.recorded_at
+  if (!recordedAt) {
+    return {
+      tone: 'pending',
+      label: '暂未确认',
+      hint: '还没有拿到最近上报时间，平台下行可能会更慢。'
+    }
+  }
+
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(recordedAt).getTime()) / 1000))
+  if (seconds <= 45) {
+    return {
+      tone: 'success',
+      label: '活跃',
+      hint: `最近 ${seconds} 秒内有上报，下行命令通常更容易及时投递。`
+    }
+  }
+
+  if (seconds <= 180) {
+    return {
+      tone: 'pending',
+      label: '一般',
+      hint: `最近一次上报距今约 ${seconds} 秒，命令可能会先停留在“已保存”。`
+    }
+  }
+
+  return {
+    tone: 'failed',
+    label: '偏低',
+    hint: `最近一次上报距今约 ${seconds} 秒，建议先保持上报开启再下发命令。`
+  }
+})
+
+const deliveryHint = computed(() => {
+  const feedback = props.lastFeedback
+  if (!feedback) {
+    return {
+      title: '等待新命令',
+      message: '新命令提交后，会依次经历已提交、已保存、已送达和已执行。'
+    }
+  }
+
+  if (feedback.error_message) {
+    return {
+      title: '提交失败',
+      message: '这次命令没有成功提交到平台，请根据错误提示重试。'
+    }
+  }
+
+  if (feedback.status === 'success') {
+    return {
+      title: '已执行',
+      message: '设备 ACK 已回传，当前动作已经被硬件侧确认执行。'
+    }
+  }
+
+  if (feedback.status === 'sent') {
+    return {
+      title: '等待 ACK',
+      message: '平台侧已经送达，正在等待设备执行并回传 ACK。'
+    }
+  }
+
+  return {
+    title: '平台处理中',
+    message: '如果设备活跃度较低，命令可能会先保存，稍后再投递。'
+  }
+})
+
 function formatValue(value, unit, precision) {
   if (value === null || value === undefined) return `-- ${unit}`
   return `${Number(value).toFixed(precision)} ${unit}`
@@ -192,6 +287,24 @@ function describeFeedback(feedback) {
   if (feedback.ctwing_command_status) return `${feedback.command_type} · ${feedback.ctwing_command_status}`
   return `${feedback.command_type} · ${formatLocalStatus(feedback.status)}`
 }
+
+function commandTimeline(component) {
+  const feedback = feedbackFor(component)
+  const status = feedback?.status || component?.last_command_status || 'idle'
+  const ctwingStatus = String(feedback?.ctwing_command_status || '')
+  const failed = status === 'failed' || Boolean(feedback?.error_message)
+  const submitted = status !== 'idle'
+  const saved = submitted
+  const delivered = status === 'sent' || status === 'success' || ctwingStatus.includes('送达')
+  const executed = status === 'success'
+
+  return [
+    { key: 'submitted', label: '已提交', state: submitted ? 'done' : 'idle' },
+    { key: 'saved', label: '已保存', state: failed ? 'failed' : saved ? 'done' : 'idle' },
+    { key: 'delivered', label: '已送达', state: failed ? 'failed' : delivered ? 'done' : 'idle' },
+    { key: 'executed', label: '已执行', state: failed ? 'failed' : executed ? 'done' : 'idle' }
+  ]
+}
 </script>
 
 <style scoped lang="scss">
@@ -207,6 +320,14 @@ h2,h3{margin:0;color:#f3f7fa}
 .feedback-banner.pending{background:rgba(255,200,87,.12);border-color:rgba(255,200,87,.25)}
 .feedback-banner.success{background:rgba(95,211,188,.12);border-color:rgba(95,211,188,.24)}
 .feedback-banner.failed{background:rgba(255,120,120,.12);border-color:rgba(255,120,120,.24)}
+.context-hints{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.context-hint{padding:14px;border-radius:16px;background:rgba(10,33,39,.88);border:1px solid rgba(164,215,210,.1)}
+.context-hint span{display:block;color:#87a5ac;font-size:13px;margin-bottom:6px}
+.context-hint strong{display:block;font-size:18px;color:#f3f7fa}
+.context-hint strong.success{color:#bfece3}
+.context-hint strong.pending{color:#ffe2a4}
+.context-hint strong.failed{color:#ffc2c2}
+.context-hint small{display:block;margin-top:6px;color:#97afb4;line-height:1.5}
 .control-grid{display:grid;grid-template-columns:240px minmax(0,1fr);gap:12px}
 .snapshot-card,.action-card,.component-card{padding:14px;border-radius:16px;background:rgba(10,33,39,.88);border:1px solid rgba(164,215,210,.1)}
 .section-title{display:grid;gap:4px;margin-bottom:10px}
@@ -230,14 +351,26 @@ h2,h3{margin:0;color:#f3f7fa}
 .status-pill.pending{background:rgba(255,200,87,.12);color:#ffe2a4}
 .status-pill.failed{background:rgba(255,120,120,.12);color:#ffc2c2}
 .command-hint{display:block;margin-top:10px;font-size:14px;line-height:1.5;color:#97afb4}
+.timeline{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+.timeline-step{display:grid;justify-items:center;gap:6px;padding:10px 8px;border-radius:12px;background:rgba(12,43,49,.5);border:1px solid rgba(164,215,210,.08)}
+.timeline-step strong{font-size:13px;color:#87a5ac}
+.timeline-step.done{background:rgba(95,211,188,.1);border-color:rgba(95,211,188,.22)}
+.timeline-step.done strong{color:#d7f6ef}
+.timeline-step.failed{background:rgba(255,120,120,.1);border-color:rgba(255,120,120,.22)}
+.timeline-step.failed strong{color:#ffd3d3}
+.timeline-dot{width:10px;height:10px;border-radius:999px;background:rgba(164,215,210,.24)}
+.timeline-step.done .timeline-dot{background:#5fd3bc}
+.timeline-step.failed .timeline-dot{background:#ff857f}
 .component-actions{display:flex;gap:8px}
 .ghost-btn,.primary-btn{height:38px;min-width:76px;border-radius:10px;cursor:pointer;font-size:15px}
 .ghost-btn{border:1px solid rgba(164,215,210,.22);background:transparent;color:#d7e8eb}
 .primary-btn{border:none;background:linear-gradient(135deg,#4fa98f,#2f7f6d);color:#fff}
 .ghost-btn:disabled,.primary-btn:disabled{opacity:.65;cursor:not-allowed}
 @media (max-width:900px){
+  .context-hints{grid-template-columns:1fr}
   .control-grid{grid-template-columns:1fr}
   .component-card{grid-template-columns:1fr}
   .feedback-banner{flex-direction:column;align-items:flex-start}
+  .timeline{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 </style>

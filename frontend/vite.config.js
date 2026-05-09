@@ -14,6 +14,15 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: false
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ['vue', 'pinia'],
+          charts: ['echarts'],
+          axios: ['axios']
+        }
+      }
+    }
   }
 })

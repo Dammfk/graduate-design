@@ -335,6 +335,12 @@ h2,h3{margin:0;color:#f3f7fa}
 .modal-mask{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(2,10,13,.66);backdrop-filter:blur(8px);z-index:30}
 .modal-card{width:min(760px,100%);display:grid;gap:16px;padding:22px;border-radius:24px;background:rgba(9,27,32,.98);border:1px solid rgba(176,224,221,.14);box-shadow:0 24px 60px rgba(0,0,0,.35)}
 .modal-log-list{max-height:420px;overflow:auto;grid-template-columns:1fr}
+@media (max-width:1360px){
+  .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .top-grid{grid-template-columns:1fr}
+  .history-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
 @media (max-width:1100px){
   .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .top-grid{grid-template-columns:1fr}

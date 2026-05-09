@@ -85,3 +85,16 @@ async function handleDeleteDailyTask(taskId) {
   return await monitoringStore.deleteDailyTask(taskId)
 }
 </script>
+
+<style scoped>
+.page-grid,
+.page-panel {
+  height: calc(100vh - 160px);
+  min-height: calc(100vh - 160px);
+  max-height: calc(100vh - 160px);
+}
+
+.page-panel {
+  overflow: hidden;
+}
+</style>

@@ -20,6 +20,15 @@
           </div>
         </div>
 
+        <div class="filter-row">
+          <input v-model.trim="batchKeyword" placeholder="批次编号 / 品类关键词" />
+          <select v-model="batchSort">
+            <option value="recent">按入栏时间排序</option>
+            <option value="quantity">按数量排序</option>
+            <option value="name">按批次编号排序</option>
+          </select>
+        </div>
+
         <div class="archive-list">
           <button
             v-for="archive in pagedArchives"
@@ -52,8 +61,13 @@
           <span class="column-count">{{ filteredAnimals.length }}</span>
         </div>
 
-        <div class="search-field animal-search">
+        <div class="filter-row animal-search">
           <input v-model.trim="animalKeyword" placeholder="编号查询：输入个体编号或耳标号" />
+          <select v-model="animalSort">
+            <option value="recent">按最近更新排序</option>
+            <option value="code">按个体编号排序</option>
+            <option value="health">按健康状态排序</option>
+          </select>
         </div>
 
         <div v-if="selectedArchive" class="animal-selector-panel">
@@ -122,9 +136,9 @@
             </div>
 
             <div class="form-grid">
-              <input v-model="archiveForm.batch_number" placeholder="批次编号" />
-              <input v-model="archiveForm.species" placeholder="养殖品类" />
-              <input v-model.number="archiveForm.quantity" type="number" min="1" placeholder="数量" />
+              <input v-model="archiveForm.batch_number" :class="{ 'input-invalid': archiveErrors.batch_number }" placeholder="批次编号" />
+              <input v-model="archiveForm.species" :class="{ 'input-invalid': archiveErrors.species }" placeholder="养殖品类" />
+              <input v-model.number="archiveForm.quantity" :class="{ 'input-invalid': archiveErrors.quantity }" type="number" min="1" placeholder="数量" />
               <select v-model="archiveForm.health_status">
                 <option value="good">良好</option>
                 <option value="stable">稳定</option>
@@ -160,13 +174,13 @@
               </div>
 
               <div class="animal-form-grid">
-                <input v-model="selectedAnimalForm.animal_code" placeholder="个体编号" />
-                <input v-model="selectedAnimalForm.species" placeholder="物种" />
+                <input v-model="selectedAnimalForm.animal_code" :class="{ 'input-invalid': animalFormErrors.animal_code }" placeholder="个体编号" />
+                <input v-model="selectedAnimalForm.species" :class="{ 'input-invalid': animalFormErrors.species }" placeholder="物种" />
                 <input v-model="selectedAnimalForm.breed" placeholder="品种" />
                 <input v-model="selectedAnimalForm.gender" placeholder="性别" />
                 <input v-model="selectedAnimalForm.ear_tag" placeholder="耳标号" />
                 <input v-model.number="selectedAnimalForm.weight" type="number" min="0" step="0.1" placeholder="体重(kg)" />
-                <input v-model="selectedAnimalForm.check_in_date" type="datetime-local" placeholder="入栏时间" />
+                <input v-model="selectedAnimalForm.check_in_date" :class="{ 'input-invalid': animalFormErrors.check_in_date }" type="datetime-local" placeholder="入栏时间" />
                 <input v-model="selectedAnimalForm.source" placeholder="来源地" />
                 <select v-model="selectedAnimalForm.health_status">
                   <option value="good">良好</option>
@@ -175,6 +189,8 @@
                 </select>
                 <input v-model="selectedAnimalForm.notes" placeholder="个体备注" />
               </div>
+
+              <div v-if="firstAnimalFormError" class="field-error-banner">{{ firstAnimalFormError }}</div>
 
               <div class="record-section">
                 <div class="record-section-header">
@@ -223,11 +239,28 @@
           <h3>新增批次档案</h3>
           <button class="ghost-btn" type="button" @click="showArchiveModal = false">取消</button>
         </div>
+        <p class="form-note">带 <strong>*</strong> 的字段为必填项。</p>
         <div class="form-grid">
-          <input v-model="newArchive.batch_number" placeholder="批次编号，如 BATCH-CATTLE-004" />
-          <input v-model="newArchive.species" placeholder="养殖品类，如 肉牛 / 奶牛 / 肉羊" />
-          <input v-model.number="newArchive.quantity" type="number" min="1" placeholder="数量" />
-          <input v-model="newArchive.check_in_date" type="datetime-local" />
+          <div class="field-block">
+            <label>批次编号 *</label>
+            <input v-model="newArchive.batch_number" :class="{ 'input-invalid': archiveCreateErrors.batch_number }" placeholder="如 BATCH-CATTLE-004" />
+            <small v-if="archiveCreateErrors.batch_number" class="field-error">{{ archiveCreateErrors.batch_number }}</small>
+          </div>
+          <div class="field-block">
+            <label>养殖品类 *</label>
+            <input v-model="newArchive.species" :class="{ 'input-invalid': archiveCreateErrors.species }" placeholder="如 肉牛 / 奶牛 / 肉羊" />
+            <small v-if="archiveCreateErrors.species" class="field-error">{{ archiveCreateErrors.species }}</small>
+          </div>
+          <div class="field-block">
+            <label>数量 *</label>
+            <input v-model.number="newArchive.quantity" :class="{ 'input-invalid': archiveCreateErrors.quantity }" type="number" min="1" placeholder="数量" />
+            <small v-if="archiveCreateErrors.quantity" class="field-error">{{ archiveCreateErrors.quantity }}</small>
+          </div>
+          <div class="field-block">
+            <label>入栏时间 *</label>
+            <input v-model="newArchive.check_in_date" :class="{ 'input-invalid': archiveCreateErrors.check_in_date }" type="datetime-local" />
+            <small v-if="archiveCreateErrors.check_in_date" class="field-error">{{ archiveCreateErrors.check_in_date }}</small>
+          </div>
         </div>
         <div class="inline-actions">
           <button class="primary-btn" :disabled="submitting.archive" @click="submitArchive">
@@ -243,15 +276,43 @@
           <h3>新增个体档案</h3>
           <button class="ghost-btn" type="button" @click="showAnimalModal = false">取消</button>
         </div>
+        <p class="form-note">基础档案保存的是个体静态信息，接种记录请在详情页右侧单独追加。</p>
         <div class="form-grid">
-          <input v-model="newAnimal.animal_code" placeholder="个体编号，如 CATTLE-010" />
-          <input v-model="newAnimal.species" placeholder="物种，如 肉牛 / 肉羊" />
-          <input v-model="newAnimal.breed" placeholder="品种" />
-          <input v-model="newAnimal.gender" placeholder="性别" />
-          <input v-model="newAnimal.ear_tag" placeholder="耳标号" />
-          <input v-model.number="newAnimal.weight" type="number" min="0" step="0.1" placeholder="体重(kg)" />
-          <input v-model="newAnimal.check_in_date" type="datetime-local" />
-          <input v-model="newAnimal.source" placeholder="来源地" />
+          <div class="field-block">
+            <label>个体编号 *</label>
+            <input v-model="newAnimal.animal_code" :class="{ 'input-invalid': animalCreateErrors.animal_code }" placeholder="如 CATTLE-010" />
+            <small v-if="animalCreateErrors.animal_code" class="field-error">{{ animalCreateErrors.animal_code }}</small>
+          </div>
+          <div class="field-block">
+            <label>物种 *</label>
+            <input v-model="newAnimal.species" :class="{ 'input-invalid': animalCreateErrors.species }" placeholder="如 肉牛 / 肉羊" />
+            <small v-if="animalCreateErrors.species" class="field-error">{{ animalCreateErrors.species }}</small>
+          </div>
+          <div class="field-block">
+            <label>品种</label>
+            <input v-model="newAnimal.breed" placeholder="品种" />
+          </div>
+          <div class="field-block">
+            <label>性别</label>
+            <input v-model="newAnimal.gender" placeholder="性别" />
+          </div>
+          <div class="field-block">
+            <label>耳标号</label>
+            <input v-model="newAnimal.ear_tag" placeholder="耳标号" />
+          </div>
+          <div class="field-block">
+            <label>体重</label>
+            <input v-model.number="newAnimal.weight" type="number" min="0" step="0.1" placeholder="体重(kg)" />
+          </div>
+          <div class="field-block">
+            <label>入栏时间 *</label>
+            <input v-model="newAnimal.check_in_date" :class="{ 'input-invalid': animalCreateErrors.check_in_date }" type="datetime-local" />
+            <small v-if="animalCreateErrors.check_in_date" class="field-error">{{ animalCreateErrors.check_in_date }}</small>
+          </div>
+          <div class="field-block">
+            <label>来源地</label>
+            <input v-model="newAnimal.source" placeholder="来源地" />
+          </div>
         </div>
         <div class="inline-actions">
           <button class="primary-btn" :disabled="submitting.animal" @click="submitAnimal">
@@ -274,13 +335,22 @@
           <div class="record-section-header">
             <strong>作用对象</strong>
             <div class="record-section-actions">
-              <span>已选 {{ selectedBulkAnimalIds.length }} / {{ filteredAnimals.length }}</span>
+              <span>已选 {{ selectedBulkAnimalIds.length }} / {{ bulkSelectableAnimals.length }}</span>
               <button class="ghost-btn compact-btn" type="button" @click="selectAllBulkAnimals">全选</button>
               <button class="ghost-btn compact-btn" type="button" @click="clearBulkAnimalSelection">清空</button>
             </div>
           </div>
+          <div class="bulk-filter-row">
+            <select v-model="bulkHealthFilter">
+              <option value="">按健康状态筛选：全部</option>
+              <option value="good">仅良好</option>
+              <option value="stable">仅稳定</option>
+              <option value="observe">仅观察</option>
+            </select>
+            <input v-model.trim="bulkEarTagKeyword" placeholder="按耳标快速筛选" />
+          </div>
           <div class="bulk-target-list">
-            <label v-for="animal in filteredAnimals" :key="`bulk-${animal.id}`" class="bulk-target-item">
+            <label v-for="animal in bulkSelectableAnimals" :key="`bulk-${animal.id}`" class="bulk-target-item">
               <input v-model="selectedBulkAnimalIds" type="checkbox" :value="animal.id" />
               <span class="bulk-target-code">{{ animal.animal_code }}</span>
               <small>{{ animal.ear_tag || '未录入耳标' }}</small>
@@ -344,6 +414,18 @@
             <p class="modal-tip">{{ selectedAnimal?.animal_code || '--' }} 的历史变更记录</p>
           </div>
           <button class="ghost-btn" type="button" @click="closeHistoryModal">关闭</button>
+        </div>
+        <div class="history-filter-row">
+          <button
+            v-for="item in historyFilterOptions"
+            :key="item.value"
+            class="ghost-btn compact-btn"
+            :class="{ active: historyFieldFilter === item.value }"
+            type="button"
+            @click="historyFieldFilter = item.value"
+          >
+            {{ item.label }}
+          </button>
         </div>
         <div v-if="displayHistoryRecords.length" class="history-list history-list-modal">
           <div v-for="record in displayHistoryRecords" :key="record.id" class="history-item">
@@ -425,15 +507,46 @@ const showImmunizationModal = ref(false)
 const showBulkModal = ref(false)
 const showHistoryModal = ref(false)
 const archivePage = ref(1)
+const batchKeyword = ref('')
+const batchSort = ref('recent')
 const animalKeyword = ref('')
+const animalSort = ref('recent')
 const animalPage = ref(1)
+const bulkHealthFilter = ref('')
+const bulkEarTagKeyword = ref('')
+const historyFieldFilter = ref('all')
 const pageSize = 7
 const submitting = reactive({ archive: false, archiveEdit: false, archiveDelete: false, animal: false, bulkAnimal: false })
 const busyAnimalId = ref(null)
+const archiveCreateErrors = reactive({ batch_number: '', species: '', quantity: '', check_in_date: '' })
+const archiveErrors = reactive({ batch_number: '', species: '', quantity: '' })
+const animalCreateErrors = reactive({ animal_code: '', species: '', check_in_date: '' })
+const animalFormErrors = reactive({ animal_code: '', species: '', check_in_date: '' })
 
 const healthMap = { stable: '稳定', good: '良好', observe: '观察' }
 
-const visibleArchives = computed(() => props.archives.filter((archive) => archive.is_active !== false))
+const visibleArchives = computed(() => {
+  const normalizedKeyword = batchKeyword.value.trim().toLowerCase()
+  const sorted = props.archives
+    .filter((archive) => archive.is_active !== false)
+    .filter((archive) => {
+      if (!normalizedKeyword) return true
+      return [archive.batch_number, archive.species, archive.notes]
+        .filter(Boolean)
+        .some((item) => String(item).toLowerCase().includes(normalizedKeyword))
+    })
+    .sort((left, right) => {
+      if (batchSort.value === 'quantity') {
+        return Number(right.quantity || 0) - Number(left.quantity || 0)
+      }
+      if (batchSort.value === 'name') {
+        return String(left.batch_number || '').localeCompare(String(right.batch_number || ''))
+      }
+      return new Date(right.check_in_date || 0).getTime() - new Date(left.check_in_date || 0).getTime()
+    })
+
+  return sorted
+})
 const totalArchivePages = computed(() => Math.max(1, Math.ceil(visibleArchives.value.length / pageSize)))
 const pagedArchives = computed(() => {
   const start = (archivePage.value - 1) * pageSize
@@ -444,11 +557,22 @@ const filteredAnimals = computed(() => {
   const normalizedKeyword = animalKeyword.value.trim().toLowerCase()
   const animals = props.selectedArchive?.animals || []
 
-  if (!normalizedKeyword) return animals
-  return animals.filter((animal) => {
-    const code = (animal.animal_code || '').toLowerCase()
-    const earTag = (animal.ear_tag || '').toLowerCase()
-    return code.includes(normalizedKeyword) || earTag.includes(normalizedKeyword)
+  const filtered = !normalizedKeyword
+    ? animals
+    : animals.filter((animal) => {
+        const code = (animal.animal_code || '').toLowerCase()
+        const earTag = (animal.ear_tag || '').toLowerCase()
+        return code.includes(normalizedKeyword) || earTag.includes(normalizedKeyword)
+      })
+
+  return [...filtered].sort((left, right) => {
+    if (animalSort.value === 'code') {
+      return String(left.animal_code || '').localeCompare(String(right.animal_code || ''))
+    }
+    if (animalSort.value === 'health') {
+      return healthWeight(left.health_status) - healthWeight(right.health_status)
+    }
+    return new Date(right.updated_at || right.created_at || 0).getTime() - new Date(left.updated_at || left.created_at || 0).getTime()
   })
 })
 
@@ -467,11 +591,32 @@ const immunizationEntries = computed(() => {
   return splitAppendOnlyEntries(selectedAnimal.value?.immunization_note).reverse()
 })
 
+const bulkSelectableAnimals = computed(() => {
+  const health = bulkHealthFilter.value
+  const earTagKeyword = bulkEarTagKeyword.value.trim().toLowerCase()
+  return filteredAnimals.value.filter((animal) => {
+    const healthMatched = !health || animal.health_status === health
+    const earTagMatched = !earTagKeyword || String(animal.ear_tag || '').toLowerCase().includes(earTagKeyword)
+    return healthMatched && earTagMatched
+  })
+})
+
+const historyFilterOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'basic', label: '基础档案' },
+  { value: 'immunization_note', label: '接种记录' },
+  { value: 'notes', label: '备注' },
+  { value: 'time', label: '时间字段' }
+]
+
 const displayHistoryRecords = computed(() => {
   const records = selectedAnimal.value?.history_records || []
   const seen = new Set()
 
   return records.filter((record) => {
+    if (!matchesHistoryFilter(record.field_name)) {
+      return false
+    }
     const signature = `${record.field_name}::${record.old_value || ''}::${record.new_value || ''}`
     if (seen.has(signature)) {
       return false
@@ -479,6 +624,10 @@ const displayHistoryRecords = computed(() => {
     seen.add(signature)
     return true
   })
+})
+
+const firstAnimalFormError = computed(() => {
+  return animalFormErrors.animal_code || animalFormErrors.species || animalFormErrors.check_in_date || ''
 })
 
 watch(
@@ -529,6 +678,10 @@ watch(
   { immediate: true }
 )
 
+watch([batchKeyword, batchSort], () => {
+  archivePage.value = 1
+})
+
 watch([filteredAnimals, animalPage], () => {
   if (animalPage.value > totalAnimalPages.value) {
     animalPage.value = totalAnimalPages.value
@@ -537,6 +690,10 @@ watch([filteredAnimals, animalPage], () => {
   if (!filteredAnimals.value.some((animal) => animal.id === selectedAnimalId.value)) {
     selectedAnimalId.value = pagedAnimals.value[0]?.id ?? filteredAnimals.value[0]?.id ?? null
   }
+})
+
+watch([animalKeyword, animalSort], () => {
+  animalPage.value = 1
 })
 
 watch(
@@ -559,6 +716,7 @@ watch(
       showImmunizationModal.value = false
       showBulkModal.value = false
       showHistoryModal.value = false
+      clearAnimalFormErrors()
     }
   },
   { immediate: true }
@@ -566,6 +724,10 @@ watch(
 
 function formatHealth(value) {
   return healthMap[value] || value || '未知'
+}
+
+function healthWeight(value) {
+  return { observe: 0, stable: 1, good: 2 }[value] ?? 9
 }
 
 function formatDate(value) {
@@ -699,10 +861,12 @@ function resetBulkForm() {
   bulkAnimalForm.immunization_note = ''
   bulkAnimalForm.notes = ''
   selectedBulkAnimalIds.value = []
+  bulkHealthFilter.value = ''
+  bulkEarTagKeyword.value = ''
 }
 
 function selectAllBulkAnimals() {
-  selectedBulkAnimalIds.value = filteredAnimals.value.map(item => item.id)
+  selectedBulkAnimalIds.value = bulkSelectableAnimals.value.map(item => item.id)
 }
 
 function clearBulkAnimalSelection() {
@@ -732,9 +896,63 @@ function toDatetimeLocal(value) {
   return normalized.toISOString().slice(0, 16)
 }
 
+function resetValidation(errors) {
+  Object.keys(errors).forEach((key) => {
+    errors[key] = ''
+  })
+}
+
+function clearAnimalFormErrors() {
+  resetValidation(animalFormErrors)
+}
+
+function validateArchiveCreate() {
+  resetValidation(archiveCreateErrors)
+  if (!newArchive.batch_number.trim()) archiveCreateErrors.batch_number = '请填写批次编号'
+  if (!newArchive.species.trim()) archiveCreateErrors.species = '请填写养殖品类'
+  if (!newArchive.quantity || Number(newArchive.quantity) < 1) archiveCreateErrors.quantity = '数量至少为 1'
+  if (!newArchive.check_in_date) archiveCreateErrors.check_in_date = '请选择入栏时间'
+  return !Object.values(archiveCreateErrors).some(Boolean)
+}
+
+function validateArchiveEdit() {
+  resetValidation(archiveErrors)
+  if (!archiveForm.batch_number.trim()) archiveErrors.batch_number = '批次编号不能为空'
+  if (!archiveForm.species.trim()) archiveErrors.species = '养殖品类不能为空'
+  if (!archiveForm.quantity || Number(archiveForm.quantity) < 1) archiveErrors.quantity = '数量至少为 1'
+  return !Object.values(archiveErrors).some(Boolean)
+}
+
+function validateAnimalCreate() {
+  resetValidation(animalCreateErrors)
+  if (!newAnimal.animal_code.trim()) animalCreateErrors.animal_code = '请填写个体编号'
+  if (!newAnimal.species.trim()) animalCreateErrors.species = '请填写物种'
+  if (!newAnimal.check_in_date) animalCreateErrors.check_in_date = '请选择入栏时间'
+  return !Object.values(animalCreateErrors).some(Boolean)
+}
+
+function validateAnimalEdit() {
+  resetValidation(animalFormErrors)
+  if (!selectedAnimalForm.animal_code.trim()) animalFormErrors.animal_code = '个体编号不能为空'
+  if (!selectedAnimalForm.species.trim()) animalFormErrors.species = '物种不能为空'
+  if (!selectedAnimalForm.check_in_date) animalFormErrors.check_in_date = '请保留或重新选择入栏时间'
+  return !Object.values(animalFormErrors).some(Boolean)
+}
+
+function matchesHistoryFilter(fieldName) {
+  if (historyFieldFilter.value === 'all') return true
+  if (historyFieldFilter.value === 'immunization_note') return fieldName === 'immunization_note'
+  if (historyFieldFilter.value === 'notes') return fieldName === 'notes'
+  if (historyFieldFilter.value === 'time') return fieldName === 'check_in_date' || fieldName === 'birth_date'
+  if (historyFieldFilter.value === 'basic') {
+    return !['immunization_note', 'notes', 'check_in_date', 'birth_date'].includes(fieldName)
+  }
+  return true
+}
+
 async function submitArchive() {
-  if (!newArchive.batch_number || !newArchive.species || !newArchive.check_in_date) {
-    setFeedback('error', '请先填写完整的批次编号、养殖品类和入栏时间。')
+  if (!validateArchiveCreate()) {
+    setFeedback('error', '请先补全批次档案里的必填项。')
     return
   }
 
@@ -762,6 +980,10 @@ async function submitArchive() {
 
 async function submitArchiveEdit() {
   if (!props.selectedArchiveId) return
+  if (!validateArchiveEdit()) {
+    setFeedback('error', '请先修正批次信息中的必填项。')
+    return
+  }
 
   submitting.archiveEdit = true
   setFeedback('', '')
@@ -786,6 +1008,9 @@ async function submitArchiveEdit() {
 
 async function removeArchive() {
   if (!props.selectedArchiveId) return
+  if (!window.confirm(`确认删除批次 ${props.selectedArchive?.batch_number || ''} 吗？这会同时隐藏该批次下的个体档案。`)) {
+    return
+  }
 
   submitting.archiveDelete = true
   setFeedback('', '')
@@ -805,8 +1030,8 @@ async function submitAnimal() {
     setFeedback('error', '请先选择一个批次，再新增个体档案。')
     return
   }
-  if (!newAnimal.animal_code || !newAnimal.species || !newAnimal.check_in_date) {
-    setFeedback('error', '请先填写完整的个体编号、物种和入栏时间。')
+  if (!validateAnimalCreate()) {
+    setFeedback('error', '请先补全个体档案里的必填项。')
     return
   }
 
@@ -844,6 +1069,10 @@ async function submitAnimal() {
 
 async function submitAnimalEdit() {
   if (!selectedAnimal.value) return
+  if (!validateAnimalEdit()) {
+    setFeedback('error', '基础档案还有未完成的必填项，请先修正。')
+    return
+  }
 
   busyAnimalId.value = selectedAnimal.value.id
   setFeedback('', '')
@@ -913,6 +1142,9 @@ async function submitBulkAnimalUpdate() {
 
 async function removeAnimal() {
   if (!selectedAnimal.value) return
+  if (!window.confirm(`确认删除个体 ${selectedAnimal.value.animal_code} 吗？删除后历史记录也不会再显示。`)) {
+    return
+  }
 
   busyAnimalId.value = selectedAnimal.value.id
   setFeedback('', '')
@@ -933,6 +1165,12 @@ async function removeAnimal() {
 h2,h3,h4{margin:0;color:#f3f7fa}
 .summary-grid,.form-grid,.animal-form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .summary-grid{flex:none}
+.form-note{margin:0;color:#8ea9af;font-size:14px;line-height:1.6}
+.field-block{display:grid;gap:6px}
+.field-block label{color:#a7c0c5;font-size:13px}
+.field-error{color:#ffc7c7;font-size:12px;line-height:1.4}
+.field-error-banner{padding:10px 12px;border-radius:12px;background:rgba(255,120,120,.1);color:#ffd3d3;font-size:13px}
+.input-invalid{border-color:rgba(255,120,120,.38)!important;box-shadow:0 0 0 1px rgba(255,120,120,.12)}
 .summary-grid div,.records-box,.archive-card,.animal-selector-card,.history-item{padding:14px;border-radius:16px;background:rgba(10,33,39,.88)}
 .summary-grid div{padding:10px 12px;border-radius:14px}
 .summary-grid span{display:block;color:#87a5ac;font-size:11px;margin-bottom:4px}
@@ -944,8 +1182,10 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .context-card small{display:block;margin-top:4px;color:#98b0b5;font-size:14px;line-height:1.5}
 .search-field{display:grid;gap:8px}
 .search-field label{font-size:13px;color:#87a5ac}
+.filter-row{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:10px}
 .form-grid input,.form-grid select,.animal-form-grid input,.animal-form-grid select,.search-field input{height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);background:rgba(12,43,49,.94);color:#eff7f8}
-.archive-workbench{display:grid;grid-template-columns:320px 360px minmax(0,1fr);gap:10px;align-items:stretch;flex:1;min-height:0;height:auto}
+.filter-row input,.filter-row select{height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);background:rgba(12,43,49,.94);color:#eff7f8}
+.archive-workbench{display:grid;grid-template-columns:minmax(280px,320px) minmax(320px,360px) minmax(420px,1fr);gap:10px;align-items:stretch;flex:1;min-height:0;height:auto}
 .workbench-column{min-width:0;height:100%;display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:20px;background:linear-gradient(180deg,rgba(8,27,32,.96),rgba(4,16,21,.96));border:1px solid rgba(164,215,210,.12);box-shadow:inset 0 1px 0 rgba(200,255,245,.03),0 18px 40px rgba(0,0,0,.22)}
 .column-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .column-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
@@ -1005,6 +1245,7 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .history-list{max-height:260px;overflow:auto;padding-right:4px;gap:14px}
 .history-list-modal{max-height:min(62vh,680px);padding-right:8px}
 .history-modal-card{width:min(860px,100%)}
+.history-filter-row{display:flex;gap:8px;flex-wrap:wrap}
 .history-item{display:grid;gap:10px;padding:18px 20px;border:1px solid rgba(164,215,210,.12)}
 .history-field{font-size:18px;line-height:1.35;color:#f1f7f8;font-weight:700}
 .history-change{font-size:17px;line-height:1.75;color:#d3e1e4;word-break:break-word;display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
@@ -1021,6 +1262,8 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .modal-tip{margin:8px 0 0;color:#90afb5;font-size:14px;line-height:1.5}
 .bulk-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .bulk-targets{display:grid;gap:10px;padding:14px 16px;border-radius:16px;background:rgba(8,27,32,.72)}
+.bulk-filter-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.bulk-filter-row input,.bulk-filter-row select{height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(164,215,210,.18);background:rgba(12,43,49,.94);color:#eff7f8}
 .bulk-target-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-height:220px;overflow:auto;padding-right:4px}
 .bulk-target-item{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border:1px solid rgba(164,215,210,.12);background:rgba(10,33,39,.88);cursor:pointer}
 .bulk-target-item input{width:16px;height:16px;margin:0}
@@ -1030,16 +1273,34 @@ h2,h3,h4{margin:0;color:#f3f7fa}
 .primary-btn,.ghost-btn,.danger-btn{height:36px;padding:0 14px;border-radius:12px;cursor:pointer}
 .primary-btn{border:none;background:linear-gradient(135deg,#4fa98f,#2f7f6d);color:#fff}
 .ghost-btn{border:1px solid rgba(164,215,210,.18);background:transparent;color:#eaf3f5}
+.ghost-btn.active{border-color:rgba(95,211,188,.32);background:rgba(95,211,188,.1)}
 .danger-btn{border:none;background:linear-gradient(135deg,#b45454,#8d2e2e);color:#fff}
 .primary-btn:disabled,.ghost-btn:disabled,.danger-btn:disabled{opacity:.6;cursor:not-allowed}
+@media (max-width:1500px){
+  .archive-workbench{grid-template-columns:minmax(260px,320px) minmax(320px,1fr)}
+  .detail-column{grid-column:1 / -1}
+}
 @media (max-width:1200px){
   .summary-grid,.form-grid,.animal-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .context-strip{grid-template-columns:1fr}
   .archive-workbench{grid-template-columns:1fr;height:auto;min-height:auto}
   .workbench-column{min-height:420px}
+  .filter-row,
+  .bulk-filter-row{grid-template-columns:1fr}
 }
 @media (max-width:720px){
   .summary-grid,.form-grid,.animal-form-grid{grid-template-columns:1fr}
   .bulk-target-list{grid-template-columns:1fr}
+}
+@media (max-width:900px){
+  .modal-mask{align-items:end;padding:0}
+  .modal-card,
+  .history-modal-card{
+    width:100%;
+    max-height:88vh;
+    overflow:auto;
+    border-radius:24px 24px 0 0;
+    padding:20px 18px 26px;
+  }
 }
 </style>

@@ -31,9 +31,16 @@
 
     <div class="workspace">
       <header class="topbar">
-        <div>
+        <div class="topbar-copy">
           <p class="topbar-kicker">{{ currentRoute.label }}</p>
           <h2>{{ currentRoute.headline }}</h2>
+        </div>
+        <div v-if="currentRoute.key === 'home'" class="topbar-summary-strip">
+          <article v-for="card in topbarSummaryCards" :key="card.title" class="topbar-summary-chip">
+            <span>{{ card.title }}</span>
+            <strong>{{ card.value }}</strong>
+            <small>{{ card.subtitle }}</small>
+          </article>
         </div>
         <div class="topbar-meta">
           <div class="meta-chip">
@@ -47,18 +54,23 @@
         </div>
       </header>
 
-      <section v-if="activeError" class="status-banner error">
-        {{ activeError }}
-      </section>
+      <div class="notice-stack" :class="{ 'notice-stack--home': currentRoute.key === 'home' }">
+        <transition name="notice-fade">
+          <section v-if="activeError" class="global-notice error">
+            <strong>页面提醒</strong>
+            <span>{{ activeError }}</span>
+          </section>
+        </transition>
 
-      <transition name="notice-fade">
-        <section v-if="monitoringStore.notice.visible" class="global-notice" :class="monitoringStore.notice.type">
-          <strong v-if="monitoringStore.notice.title">{{ monitoringStore.notice.title }}</strong>
-          <span>{{ monitoringStore.notice.message }}</span>
-        </section>
-      </transition>
+        <transition name="notice-fade">
+          <section v-if="monitoringStore.notice.visible" class="global-notice" :class="monitoringStore.notice.type">
+            <strong v-if="monitoringStore.notice.title">{{ monitoringStore.notice.title }}</strong>
+            <span>{{ monitoringStore.notice.message }}</span>
+          </section>
+        </transition>
+      </div>
 
-      <main class="page-body">
+      <main class="page-body" :class="`page-${currentRoute.key}`">
         <component :is="currentRoute.component" :navigate="navigate" />
       </main>
     </div>
@@ -66,15 +78,16 @@
 </template>
 
 <script setup>
-import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import OverviewHome from './views/OverviewHome.vue'
-import MonitoringView from './views/MonitoringView.vue'
-import ControlView from './views/ControlView.vue'
-import ArchivesView from './views/ArchivesView.vue'
-import AlarmsView from './views/AlarmsView.vue'
-import OperationsView from './views/OperationsView.vue'
-import SystemView from './views/SystemView.vue'
+import { computed, defineAsyncComponent, markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMonitoringStore } from './stores/monitoring'
+
+const OverviewHome = defineAsyncComponent(() => import('./views/OverviewHome.vue'))
+const MonitoringView = defineAsyncComponent(() => import('./views/MonitoringView.vue'))
+const ControlView = defineAsyncComponent(() => import('./views/ControlView.vue'))
+const ArchivesView = defineAsyncComponent(() => import('./views/ArchivesView.vue'))
+const AlarmsView = defineAsyncComponent(() => import('./views/AlarmsView.vue'))
+const OperationsView = defineAsyncComponent(() => import('./views/OperationsView.vue'))
+const SystemView = defineAsyncComponent(() => import('./views/SystemView.vue'))
 
 const monitoringStore = useMonitoringStore()
 const currentPath = ref(window.location.pathname || '/')
@@ -102,6 +115,28 @@ const activeError = computed(() => {
   if (message.includes('timeout of 10000ms exceeded')) return ''
   return message
 })
+const topbarSummaryCards = computed(() => [
+  {
+    title: '监测区域',
+    value: monitoringStore.overview.summary.zone_count || 0,
+    subtitle: `${monitoringStore.overview.summary.device_count || 0} 台设备`
+  },
+  {
+    title: '待处理告警',
+    value: monitoringStore.alarms.length,
+    subtitle: `高风险 ${monitoringStore.riskDashboard.summary.highest_risk_zone || '--'}`
+  },
+  {
+    title: '今日任务',
+    value: monitoringStore.operationsDashboard.summary.pending_tasks || 0,
+    subtitle: `库存预警 ${monitoringStore.operationsDashboard.summary.low_stock_items || 0}`
+  },
+  {
+    title: '活跃用户',
+    value: monitoringStore.systemDashboard.summary.active_users || 0,
+    subtitle: `批次 ${monitoringStore.archiveDashboard.summary.active_batches || 0}`
+  }
+])
 
 function navigate(path) {
   if (path === currentPath.value) return
@@ -306,6 +341,38 @@ input {
   line-height: 1.5;
 }
 
+.status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 24px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border-soft);
+  background: rgba(10, 33, 39, 0.84);
+  color: var(--text-main);
+}
+
+.status-banner strong {
+  font-size: 16px;
+}
+
+.status-banner span {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.status-banner.info {
+  border-color: rgba(95, 194, 170, 0.22);
+  background: rgba(95, 194, 170, 0.08);
+}
+
+.status-banner.error {
+  border-color: rgba(255, 133, 127, 0.24);
+  background: rgba(255, 133, 127, 0.08);
+}
+
 .sidebar-foot {
   margin-top: auto;
   padding: 16px 18px;
@@ -327,6 +394,10 @@ input {
 
 .workspace {
   padding: 24px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
@@ -335,6 +406,45 @@ input {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
+}
+
+.topbar-copy {
+  min-width: 0;
+}
+
+.topbar-summary-strip {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.topbar-summary-chip {
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(12, 36, 42, 0.7);
+  border: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.topbar-summary-chip span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.topbar-summary-chip strong {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.topbar-summary-chip small {
+  color: #bfd3d3;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .topbar-meta {
@@ -378,49 +488,76 @@ input {
 }
 
 .page-body {
-  min-height: calc(100vh - 160px);
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.page-body.page-monitoring,
+.page-body.page-archives,
+.page-body.page-alarms,
+.page-body.page-operations,
+.page-body.page-system {
+  overflow: hidden;
+}
+
+.notice-stack {
+  position: fixed;
+  top: 26px;
+  left: calc(280px + (100vw - 280px) / 2);
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  pointer-events: none;
+}
+
+.notice-stack--home {
+  top: auto;
+  right: 22px;
+  bottom: 22px;
+  left: auto;
+  transform: none;
+  justify-items: end;
 }
 
 .global-notice {
-  position: fixed;
-  top: 22px;
-  right: 28px;
-  z-index: 1200;
-  min-width: 280px;
-  max-width: 420px;
+  width: min(340px, calc(100vw - 32px));
   display: grid;
-  gap: 6px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(10px);
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(176, 224, 221, 0.16);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
 }
 
 .global-notice strong {
-  font-size: 15px;
+  font-size: 14px;
   color: #f5fbfc;
 }
 
 .global-notice span {
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .global-notice.info {
-  background: rgba(19, 54, 62, 0.94);
+  background: rgba(12, 41, 47, 0.9);
   color: #d6ebef;
 }
 
 .global-notice.success {
-  background: rgba(18, 70, 60, 0.95);
-  border-color: rgba(95, 211, 188, 0.32);
+  background: rgba(18, 61, 54, 0.92);
+  border-color: rgba(95, 211, 188, 0.24);
   color: #d5f4ec;
 }
 
 .global-notice.error {
-  background: rgba(78, 28, 32, 0.95);
-  border-color: rgba(255, 133, 127, 0.32);
+  background: rgba(64, 26, 30, 0.9);
+  border-color: rgba(255, 133, 127, 0.24);
   color: #ffd8d5;
 }
 
@@ -432,7 +569,7 @@ input {
 .notice-fade-enter-from,
 .notice-fade-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(10px);
 }
 
 .page-grid {
@@ -523,12 +660,37 @@ input {
     flex-direction: column;
   }
 
+  .topbar-summary-strip,
   .topbar-meta {
     width: 100%;
   }
 
+  .topbar-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .meta-chip {
     flex: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .notice-stack {
+    top: 88px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .notice-stack--home {
+    right: 12px;
+    bottom: 12px;
+    left: auto;
+    top: auto;
+    transform: none;
   }
 }
 </style>

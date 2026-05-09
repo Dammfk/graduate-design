@@ -28,7 +28,11 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, watch } from 'vue'
-import * as echarts from 'echarts'
+import { CanvasRenderer } from 'echarts/renderers'
+import { GaugeChart } from 'echarts/charts'
+import { init, use } from 'echarts/core'
+
+use([CanvasRenderer, GaugeChart])
 
 const props = defineProps({
   data: {
@@ -158,7 +162,7 @@ function ensureCharts() {
   metrics.forEach((metric) => {
     const element = chartElements.get(metric.key)
     if (element && !chartInstances.has(metric.key)) {
-      chartInstances.set(metric.key, echarts.init(element))
+      chartInstances.set(metric.key, init(element))
     }
   })
   updateCharts()
